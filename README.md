@@ -51,15 +51,16 @@ Satellite_ADCS_GUIDE/
 For the software to work, you must place the required files in the correct folders.
 
 1.  **Download Orekit:** Download `orekit-13.1.2.jar` and place it inside the `lib/orekit` folder.
-    * **Link:** [https://gitlab.orekit.org/orekit/orekit/-/releases](https://gitlab.orekit.org/orekit/orekit/-/releases)
+    * **Link 1:** [https://www.orekit.org/static/downloads.html](https://www.orekit.org/static/downloads.html).
+    * **Link 2:** [https://gitlab.orekit.org/orekit/orekit/-/releases](https://gitlab.orekit.org/orekit/orekit/-/releases)
 
-2.  **Download Hipparchus:** Download all the Hipparchus-4.0.2 binary `.jar` files (e.g., `hipparchus-core-X.X.jar`, `hipparchus-filtering-X.X.jar`, etc.) and place them inside the `lib/orekit` folder.
+3.  **Download Hipparchus:** Download all the Hipparchus-4.0.2 binary `.jar` files (e.g., `hipparchus-core-X.X.jar`, `hipparchus-filtering-X.X.jar`, etc.) and place them inside the `lib/orekit` folder.
     * **Link:** [https://hipparchus.org/downloads.html](https://hipparchus.org/downloads.html)
 
-3.  **Download Orekit Data:** Download the `orekit-data.zip` file from the tutorials link.
-    * **Link:** [https://gitlab.orekit.org/orekit/orekit-tutorials/-/releases](https://gitlab.orekit.org/orekit/orekit-tutorials/-/releases)
+4.  **Download Orekit Data:** Download the `orekit-data.zip` file from the tutorials link.
+    * **Link:** [https://www.orekit.org/static/downloads.html](https://www.orekit.org/static/downloads.html).
     * **Action:** Unzip the file and place the resulting `orekit-data` folder **inside the `lib/orekit/orekit-data` folder**.
-4. **Compile the Java Handler:** Before running the main program, you must compile the custom Java handler.
+5. **Compile the Java Handler:** Before running the main program, you must compile the custom Java handler.
     * Open MATLAB
     * Navigate to the `lib/custom_java` directory.
     * Run the `compile_java_handler.m` compile script in the MATLAB Command Window.
