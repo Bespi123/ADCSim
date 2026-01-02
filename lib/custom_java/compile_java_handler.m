@@ -15,7 +15,7 @@ java_folder = 'lib/custom_java';
 
 % --- Add all .jar libraries to the Java path ---
 % Main Orekit library
-javaaddpath(fullfile(lib_folder, 'orekit-13.0.jar'));
+javaaddpath(fullfile(lib_folder, 'orekit-13.1.2.jar'));
 % Hipparchus library modules (version 4.0.2)
 javaaddpath(fullfile(lib_folder, 'hipparchus-clustering-4.0.2.jar'));
 javaaddpath(fullfile(lib_folder, 'hipparchus-core-4.0.2.jar'));
