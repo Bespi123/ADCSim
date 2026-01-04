@@ -37,6 +37,7 @@ classdef MadgwickAHRS < handle
             obj.bias_gain = madwick_params.bias_gain; % bias gain
             obj.Beta = madwick_params.beta;           % algorithm gain
         end
+
         function obj = Predict(obj, Gyroscope)
             % Predicts the next state using only the gyroscope reading.
             % This should be called at a high frequency.

@@ -1,6 +1,39 @@
 classdef AttitudeEKF < handle
-    % ATTITUDEEKF Encapsulates the logic of an Extended Kalman Filter for attitude estimation.
-    % It maintains the estimated state (x_est) and covariance (P_cov) internally.
+%--------------------------------------------------------------------------
+% ATTITUDEEKF  Extended Kalman Filter (EKF) for spacecraft attitude estimation
+%
+% This class encapsulates an EKF that estimates attitude using a quaternion
+% representation and fuses measurements from:
+%   - IMU accelerometer (gravity direction in body frame)
+%   - IMU magnetometer (geomagnetic field direction in body frame)
+%   - Optional Star Tracker (multiple star unit vectors in body frame)
+%
+% STATE DEFINITION:
+%   x = [ q ;
+%         ω_bias ]
+% where:
+%   q ∈ ℝ⁴      : unit quaternion (scalar-first convention q = [q0 q1 q2 q3]^T)
+%   ω_bias ∈ ℝ³ : angular velocity bias
+%
+% INTERNAL VARIABLES:
+%   x_est : current state estimate (7x1)
+%   P_cov : covariance matrix (7x7)
+%
+% NOISE MODELS:
+%   Q_gyro : process noise covariance for gyro/ω block (3x3)
+%   R      : measurement noise covariance (NxN), depends on enabled sensors
+%
+% FRAME CONVENTION (as implemented in predictMeasurement):
+%   R_pred = quat2rot(q_est) returns C_I^B (rotation from Inertial to Body).
+%   Then, for a reference vector v_I in inertial coordinates, its predicted
+%   body-frame measurement is:
+%       v_B_pred = (C_I^B)' * v_I = C_B^I * v_I
+%
+% NOTE:
+%   After correction, quaternion is normalized and forced to have q0 ≥ 0 to
+%   maintain a consistent sign convention.
+%--------------------------------------------------------------------------
+
     properties
         x_est       double % Estimated state vector [q; gyro_bias] (7x1)
         P_cov       double % Error covariance matrix (7x7)
@@ -17,11 +50,26 @@ classdef AttitudeEKF < handle
     
     methods (Access = public)
         function obj = AttitudeEKF(ekf_params, sample_time, imu_obj, st_obj)
+            %------------------------------------------------------------------
+            % Constructor: configures EKF state, covariance, and noise matrices.
+            %
+            % INPUTS:
+            %   ekf_params   : struct with fields:
+            %                 - gyro_std (3x1): gyro noise std [rad/s]
+            %                 - acc_std  (3x1): accel noise std [m/s^2] (or normalized)
+            %                 - mag_std  (3x1): mag noise std
+            %                 - star_std (3x1): star vector noise std (if enabled)
+            %   sample_time  : dt [s]
+            %   imu_obj      : IMU object providing reference vectors (g_I, m_I)
+            %   st_obj       : StarTracker object (optional). If not provided,
+            %                  starTracker.enable is set to false.
+            %------------------------------------------------------------------
             import adcsim.utils.*
                         
             % Save references to sensor objects
             obj.imu = imu_obj;
             obj.dt  = sample_time;
+
             % Check if a StarTracker was provided
             if nargin > 3 && ~isempty(st_obj)
                 obj.starTracker = st_obj;
@@ -30,8 +78,8 @@ classdef AttitudeEKF < handle
             end
             
             % Initialize state and covariance
-            obj.x_est = [1; 0; 0; 0; 0; 0; 0]; % Default initial state (no rotation)
-            obj.P_cov = eye(7) * 1e-2; % Initial uncertainty
+            obj.x_est = [1; 0; 0; 0; 0; 0; 0];  % Default initial state (no rotation)
+            obj.P_cov = eye(7) * 1e-2;          % Initial uncertainty
             
             % Configure process noise matrix (Q)
             % Q_gyro represents the noise for the 3 error state elements corresponding to angular velocity.
@@ -54,25 +102,49 @@ classdef AttitudeEKF < handle
         end
         
         function initializeWithTriad(obj, g_B, m_B)
-            % Initializes the EKF attitude using the TRIAD algorithm.
+            %------------------------------------------------------------------
+            % initializeWithTriad  Initializes quaternion using TRIAD.
+            %
+            % Uses two reference vectors in inertial frame (g_I, m_I) and their
+            % corresponding body measurements (g_B, m_B) to compute an initial
+            % attitude estimate.
+            %
+            % INPUTS:
+            %   g_B : measured gravity direction in body frame
+            %   m_B : measured magnetic field direction in body frame
+            % OUTPUT:
+            %   Updates obj.x_est(1:4) with TRIAD quaternion estimate
+            %------------------------------------------------------------------
+ 
             q_triad = obj.triad_algorithm(obj.imu.g_I, obj.imu.m_I, g_B, m_B);
             obj.x_est(1:4) = q_triad;
         end
         
         function predict(obj, gyroscope)
-            % Performs the EKF prediction step.
+            %------------------------------------------------------------------
+            % predict  EKF time update (prediction step).
+            %
+            % Propagates the state using a first-order discrete approximation:
+            %   x̂ₖ₊₁ = A x̂ₖ + B uₖ
+            %
+            % where uₖ is the measured angular rate from the gyroscope.
+            %
+            % INPUT:
+            %   gyroscope : measured angular velocity [rad/s] (3x1)
+            %------------------------------------------------------------------
+            
+            % Current quaternion estimate
             q = obj.x_est(1:4);
             
-            % State transition matrix A (linearized for small time step)
-            % A = [d(q)/d(q), d(q)/d(w); d(w)/d(q), d(w)/d(w)]
+            % Non-linear model
+            % Process matrix
             A = [eye(4), -0.5 * obj.dt * obj.xi_matrix(q); 
                  zeros(3, 4), eye(3)];
             
-            % Input matrix B (for the measured angular velocity input)
+            % Input matrix B
             B = 0.5 * obj.dt * [obj.xi_matrix(q); zeros(3, 3)];
             
             % State prediction: x_est(k+1) = A*x_est(k) + B*u(k)
-            % Note: This is an *approximate* prediction, common in discrete EKF
             obj.x_est = A * obj.x_est + B * gyroscope;
             
             % Process noise covariance matrix Qd (dependent on state)
@@ -81,14 +153,31 @@ classdef AttitudeEKF < handle
             Q_top_left = 0.25 * Xi_q * obj.Q_gyro * Xi_q';
             Qd = obj.dt * blkdiag(Q_top_left, obj.Q_gyro);
             
-            % Covariance prediction: P_cov(k+1) = A*P_cov(k)*A' + Qd
-            obj.P_cov = A * obj.P_cov * A' + Qd;
+            % Jacobian for covariance propagation         
+            F = [eye(4), -0.5*obj.dt*Xi_q; zeros(3,4) eye(3)];
+            
+            % Covariance prediction
+            obj.P_cov = F * obj.P_cov * F' + Qd;
         end
         
         function correct(obj, y_meas)
-            % Performs the EKF correction step.
-            
-            % Calculate the Measurement Jacobian (H or C)
+            %------------------------------------------------------------------
+            % correct  EKF measurement update (correction step).
+            %
+            % Uses measurement model:
+            %   y = h(x) + v,   v ~ N(0, R)
+            %
+            % Update equations:
+            %   K = P Cᵀ (C P Cᵀ + R)⁻¹
+            %   x̂ ← x̂ + K (y_meas - y_pred)
+            %   P  ← (I - K C) P
+            %
+            % INPUT:
+            %   y_meas : stacked measurement vector:
+            %            [g_B; m_B; (stars_B(:) if enabled)]
+            %------------------------------------------------------------------
+
+            % Calculate the Measurement Jacobian (C)
             C = obj.computeMeasurementJacobian();
             
             % Calculate the Kalman Gain: K = P*C' * (C*P*C' + R)^(-1)
