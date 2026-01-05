@@ -122,7 +122,7 @@ function parameters = simulationParameters(~)
     % The AHRS is the algorithm that fuses sensor data to estimate the attitude.
     % Selector for the AHRS algorithm: 'MAHONY', 'MADGWICK', 'EKF', or 'UKF'.
     %parameters.ahrs.flag = 'EKF';
-    parameters.ahrs.flag = 'MAHONY';
+    parameters.ahrs.flag = 'QUEST';
     % Flag: 1 enables AHRS to the controller (realistic).
     %       0 don't use AHRS algorithm.
     parameters.ahrs.enable = true;
@@ -130,6 +130,12 @@ function parameters = simulationParameters(~)
     %       0 uses the ideal, true state for feedback (for baseline comparison).
     parameters.ahrs.enable_feedback = true;
     
+    % QUEST algorithm parameters
+    parameters.ahrs.quest.dt = 0.01;
+    parameters.ahrs.quest.K_1 = 1;   % Acc gain
+    parameters.ahrs.quest.K_2 = 1;   % Gyro gain
+    parameters.ahrs.quest.K_3 = 1;   % Star tracker gain
+
     % MAHONY filter parameters
     parameters.ahrs.mahony.K_P = 0.5;   % Proportional gain
     parameters.ahrs.mahony.K_I = 0.001; % Integral gain
