@@ -137,6 +137,7 @@ myMadwick = adcsim.AHRS_algorithms.MadgwickAHRS(simParameters.ahrs.madwick, dt, 
 myUKF = adcsim.AHRS_algorithms.AttitudeUKF(simParameters.ahrs.ukf, dt, myIMU, myStarSensor);
 myMahony = adcsim.AHRS_algorithms.Mahony(simParameters.ahrs.mahony, dt, myIMU, myStarSensor);
 myQuest= adcsim.AHRS_algorithms.QUEST(simParameters.ahrs.quest, dt, myIMU, myStarSensor);
+myRequest= adcsim.AHRS_algorithms.REQUEST(simParameters.ahrs.request, dt, myIMU, myStarSensor);
 
 % Get the initial rotation matrix from the true state.
 R_init = quat2rot(x(1:4, 1));
@@ -163,10 +164,9 @@ for i = 1:n-1
     %% 5.1. Sensor models (add noise, bias and SAMPLING)
     % Gyroscope model with sampling.
     % The gyroscope is read only if the current step is a multiple of `steps_gyro`.
-    if mod(i-1, steps_gyro) == 0 || i==1
-        %current_omega_meas  = myIMU.getGyroscopeReading(x(5:7, i));
-        current_omega_meas  = myIMU.getGyroscopeReading(x(5:7, i),Ts_gyro);
-        filtered_omega_meas = myIMU.filterGyroscopeReading(current_omega_meas, Ts_gyro);
+    if mod(i-1, myIMU.Gyroscope.ts) == 0 || i==1
+        current_omega_meas  = myIMU.getGyroscopeReading(x(5:7, i));
+        filtered_omega_meas = myIMU.filterGyroscopeReading(current_omega_meas);
     end
     % The measurement (raw or held from the previous step) is saved to the history.
     omega_meas(:, i) = current_omega_meas;
@@ -217,6 +217,7 @@ for i = 1:n-1
             % Save the updated state estimate.
             x_est(1:4, i + 1) = myMadwick.x_est;
             x_est(5:7, i + 1) = myMadwick.gyro_bias;
+        
         elseif strcmp(simParameters.ahrs.flag, 'MAHONY')
             myMahony = myMahony.Predict(filtered_omega_meas);
             % Correction step runs only when new attitude measurements are available.
@@ -252,6 +253,24 @@ for i = 1:n-1
             % Save the updated state estimate.
            x_est(1:4, i + 1) = myQuest.x_est;
            x_est(5:7, i + 1) = myQuest.gyro_bias; % Assuming UKF doesn't estimate gyro bias in this implementation.        
+
+        elseif strcmp(simParameters.ahrs.flag, 'REQUEST')
+            myRequest = myRequest.Predict(filtered_omega_meas);
+            if mod(i-1, steps_attitude) == 0
+                R = quat2rot(x(1:4, i));
+                g_B(:,i) = myIMU.getAccelerometerReading(R);
+                m_B(:,i) = myIMU.getMagnetometerReading(R);
+                if simParameters.sensors.star.enable == 1 
+                    stars_B(:,i)  = myStarSensor.getReading(R);
+                    y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
+                else
+                    y = [g_B(:,i); m_B(:,i)];
+                end
+                myRequest = myRequest.Update(filtered_omega_meas, y);
+            end
+            % Save the updated state estimate.
+            x_est(1:4, i + 1) = myRequest.x_est;
+            x_est(5:7, i + 1) = myRequest.gyro_bias; % Assuming UKF doesn't estimate gyro bias in this implementation.   
 
         else
             %% Unscented Kalman Filter (UKF)
