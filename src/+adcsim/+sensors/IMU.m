@@ -29,7 +29,8 @@ classdef IMU < handle
                 'std', sensors.gyro.std, ...
                 'bias', sensors.gyro.bias, ...
                 'tau_gyro_filter', sensors.gyro.tau, ...
-                'last_filtered_omega', zeros(3,1)...
+                'last_filtered_omega', zeros(3,1),...
+                'ts', sensors.gyro.Ts ...
             );
             
             % Initialize the Accelerometer model properties.
@@ -49,7 +50,7 @@ classdef IMU < handle
             obj.m_I = sensors.mag.m_I;
         end
         
-        function reading = getGyroscopeReading(obj, omega, ~)
+        function reading = getGyroscopeReading(obj, omega)
             %getGyroscopeReading Simulates a gyroscope measurement.
             %   Adds Gaussian noise and a constant bias to the true angular velocity.
             %
@@ -62,17 +63,18 @@ classdef IMU < handle
             reading = omega + noise + obj.Gyroscope.bias;
         end
 
-        function reading_filtered = filterGyroscopeReading(obj, gyro_reading, Ts_gyro)       
+        function reading_filtered = filterGyroscopeReading(obj, gyro_reading)       
             %filterGyroscopeReading Applies a low-pass filter to the gyro measurement.
             %   This simulates the smoothing effect often present in real sensor hardware
             %   or preprocessing software.
             %
             %   Inputs:
             %       gyro_reading - 3x1 raw (simulated) gyroscope measurement.
-            %       Ts_gyro      - Sampling time of the gyroscope.
             %   Outputs:
             %       reading_filtered - 3x1 filtered gyroscope measurement.
-
+            
+            % Ts_gyro: Sampling time of the gyroscope.
+            Ts_gyro = obj.Gyroscope.ts;
             % Discrete first-order low-pass filter implementation.
             alpha = Ts_gyro / (obj.Gyroscope.tau_gyro_filter + Ts_gyro);
             reading_filtered = (1 - alpha) * obj.Gyroscope.last_filtered_omega + alpha * gyro_reading;
