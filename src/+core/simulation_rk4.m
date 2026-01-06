@@ -165,7 +165,7 @@ for i = 1:n-1
     %% 5.1. Sensor models (add noise, bias and SAMPLING)
     % Gyroscope model with sampling.
     % The gyroscope is read only if the current step is a multiple of `steps_gyro`.
-    if mod(i-1, myIMU.Gyroscope.ts) == 0 || i==1
+    if mod(i-1, steps_gyro) == 0 || i==1
         current_omega_meas  = myIMU.getGyroscopeReading(x(5:7, i));
         filtered_omega_meas = myIMU.filterGyroscopeReading(current_omega_meas);
     end

@@ -26,7 +26,8 @@ function parameters = simulationParameters(~)
     % Sample time for the gyroscope sensor [s]. Gyros are often sampled at a higher
     % rate because they are used for high-frequency state propagation in the AHRS.
     parameters.sensors.gyro.Ts      = 0.005; % 200 Hz
-    
+    parameters.sensors_soph.gyro.Ts      = 0.005; % 200 Hz
+
     % Sample time for other attitude sensors (Accelerometer, Magnetometer, Star Tracker) [s].
     % These sensors are typically slower and used for correcting the gyro drift.
     parameters.sensors.attitude.Ts  = 0.01;  % 100 Hz
@@ -38,7 +39,7 @@ function parameters = simulationParameters(~)
     % --- Sensor Model Parameters ---
     % These sections model the imperfections of real-world sensors.
     % Flag to use sophisticated model (0) or simple model (1)
-    parameters.sensors_selector.imu.flag = 1;
+    parameters.sensors_selector.imu.flag = 0;
 
     %%% Accelerometer sensor
     % Gravitational acceleration vector in the inertial frame (e.g., pointing towards Earth).
@@ -95,6 +96,10 @@ function parameters = simulationParameters(~)
     % Axis misalignment errors (e.g., 0.2 degrees) [radians].
     % [m12, m13, m21, m23, m31, m32]
     parameters.sensors_soph.gyro.misalignment_errors = 0.0035 * [1; -0.5; 0.8; 1.1; -0.9; 0.6];
+    % Sensor saturation limit [rad/s].
+    parameters.sensors_soph.gyro.limit = 2000* (pi/180);
+    % ADC Resolution [bits].
+    parameters.sensors_soph.gyro.bits = 16;
     
     %%% Accelerometer (Sophisticated Model)
     parameters.sensors_soph.acc.g_I = parameters.sensors.acc.g_I;
@@ -106,6 +111,11 @@ function parameters = simulationParameters(~)
     parameters.sensors_soph.acc.scale_factor_errors = 0.005 * [-0.7; 0.4; 0.9];
     % Axis misalignment errors (e.g., 0.5 degrees) [radians].
     parameters.sensors_soph.acc.misalignment_errors = 0.0087 * [1; 1; 1; 1; 1; 1];
+    % Sensor saturation limit [m/s^2].
+    parameters.sensors_soph.acc.limit = 20;
+    % ADC Resolution [bits].
+    parameters.sensors_soph.acc.bits = 12;
+
 
     %%% Magnetometer (Sophisticated Model)
     parameters.sensors_soph.mag.m_I = parameters.sensors.mag.m_I;
@@ -117,12 +127,16 @@ function parameters = simulationParameters(~)
     parameters.sensors_soph.mag.scale_factor_errors = 0.02 * [1.2; -0.8; 0.5];
     % Axis misalignment errors (e.g., 1.0 degree) [radians].
     parameters.sensors_soph.mag.misalignment_errors = 0.0175 * [1; 1; 1; 1; 1; 1];
-    
+    % Sensor saturation limit [T].
+    parameters.sensors_soph.mag.limit = 60e-6;
+    % ADC Resolution [bits].
+    parameters.sensors_soph.mag.bits = 14;
+
     % --- AHRS (Attitude and Heading Reference System) Selection ---
     % The AHRS is the algorithm that fuses sensor data to estimate the attitude.
     % Selector for the AHRS algorithm: 'MAHONY', 'MADGWICK', 'EKF', or 'UKF'.
-    %parameters.ahrs.flag = 'EKF';
-    parameters.ahrs.flag = 'CKF';
+    parameters.ahrs.flag = 'EKF';
+    
     % Flag: 1 enables AHRS to the controller (realistic).
     %       0 don't use AHRS algorithm.
     parameters.ahrs.enable = true;
@@ -132,13 +146,13 @@ function parameters = simulationParameters(~)
     
     % QUEST algorithm parameters
     parameters.ahrs.quest.dt = 0.01;
-    parameters.ahrs.quest.K_1 = 1;   % Acc gain
+    parameters.ahrs.quest.K_1 = 0.1;   % Acc gain
     parameters.ahrs.quest.K_2 = 1;   % Gyro gain
     parameters.ahrs.quest.K_3 = 1;   % Star tracker gain
 
     % REQUEST algorithm parameters
-    parameters.ahrs.request.dt = 0.0001;
-    parameters.ahrs.request.K_1 = 1;   % Acc gain
+    parameters.ahrs.request.dt = 0.001;
+    parameters.ahrs.request.K_1 = 0.1;   % Acc gain
     parameters.ahrs.request.K_2 = 1;   % Gyro gain
     parameters.ahrs.request.K_3 = 1;   % Star tracker gain
     parameters.ahrs.request.P = 0.5;   % Request fade gain
