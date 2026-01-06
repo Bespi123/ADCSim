@@ -172,6 +172,7 @@ classdef AttitudeUKF < handle
             obj.weights_m(2:end) = common_weight;
             obj.weights_c(2:end) = common_weight;
         end
+
         function sigma_quats = generate_sigma_points(obj, q_mean, P_error)
             n = obj.num_error_states;
             scale = sqrt(n + obj.lambda_param);
@@ -189,6 +190,7 @@ classdef AttitudeUKF < handle
                 sigma_quats(:, i + 1) = quatmultiply(q_err', q_mean')';
             end
         end
+        
         function [mean_q, P_error] = recover_statistics_quat(obj, q_points, q_noise_cov)
             q_avg = q_points(:,1);
             error_vectors = zeros(obj.num_error_states, obj.num_sigma_points);

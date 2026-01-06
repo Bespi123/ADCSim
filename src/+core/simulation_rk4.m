@@ -138,6 +138,7 @@ myUKF = adcsim.AHRS_algorithms.AttitudeUKF(simParameters.ahrs.ukf, dt, myIMU, my
 myMahony = adcsim.AHRS_algorithms.Mahony(simParameters.ahrs.mahony, dt, myIMU, myStarSensor);
 myQuest= adcsim.AHRS_algorithms.QUEST(simParameters.ahrs.quest, dt, myIMU, myStarSensor);
 myRequest= adcsim.AHRS_algorithms.REQUEST(simParameters.ahrs.request, dt, myIMU, myStarSensor);
+myCKF = adcsim.AHRS_algorithms.AttitudeCKF(simParameters.ahrs.ckf, dt, myIMU, myStarSensor);
 
 % Get the initial rotation matrix from the true state.
 R_init = quat2rot(x(1:4, 1));
@@ -270,8 +271,26 @@ for i = 1:n-1
             end
             % Save the updated state estimate.
             x_est(1:4, i + 1) = myRequest.x_est;
-            x_est(5:7, i + 1) = myRequest.gyro_bias; % Assuming UKF doesn't estimate gyro bias in this implementation.   
+            x_est(5:7, i + 1) = myRequest.gyro_bias; 
 
+        elseif strcmp(simParameters.ahrs.flag, 'CKF')
+            myCKF.Predict(filtered_omega_meas);
+            if mod(i-1, steps_attitude) == 0
+                R = quat2rot(x(1:4, i));
+                g_B(:,i) = myIMU.getAccelerometerReading(R);
+                m_B(:,i) = myIMU.getMagnetometerReading(R);
+                if simParameters.sensors.star.enable == 1 
+                    stars_B(:,i)  = myStarSensor.getReading(R);
+                    y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
+                else
+                    y = [g_B(:,i); m_B(:,i)];
+                end
+                myCKF.Correct(y);
+            end
+            % Save the updated state estimate.
+            x_est(1:4, i + 1) = myCKF.x_est;
+            x_est(5:7, i + 1) = myCKF.gyro_bias; 
+            
         else
             %% Unscented Kalman Filter (UKF)
             myUKF.Predict(filtered_omega_meas);

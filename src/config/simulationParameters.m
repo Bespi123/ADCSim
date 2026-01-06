@@ -122,7 +122,7 @@ function parameters = simulationParameters(~)
     % The AHRS is the algorithm that fuses sensor data to estimate the attitude.
     % Selector for the AHRS algorithm: 'MAHONY', 'MADGWICK', 'EKF', or 'UKF'.
     %parameters.ahrs.flag = 'EKF';
-    parameters.ahrs.flag = 'REQUEST';
+    parameters.ahrs.flag = 'CKF';
     % Flag: 1 enables AHRS to the controller (realistic).
     %       0 don't use AHRS algorithm.
     parameters.ahrs.enable = true;
@@ -179,6 +179,15 @@ function parameters = simulationParameters(~)
     parameters.ahrs.ukf.acc_std  = [0.011817097; 0.012306208; 0.015949601];
     parameters.ahrs.ukf.mag_std  = [0.011817097; 0.012306208; 0.015949601];
     parameters.ahrs.ukf.star_std  = 1E-3 * [1; 1; 1];
+    
+
+    % CKF (Cubature Kalman Filter) parameters
+    parameters.ahrs.ckf = struct( ...
+    'gyro_std',  [0.002; 0.002; 0.002], ...
+    'acc_std',   [0.002; 0.002; 0.002], ...
+    'mag_std',   [0.03;  0.03;  0.03 ], ...
+    'star_std',  [1e-3;  1e-3;  1e-3]  ... 
+    );
     
     % --- Controller Setpoint Parameters ---
     % The 'setpoint' is the target state that the controller tries to achieve.
