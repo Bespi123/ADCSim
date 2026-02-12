@@ -37,7 +37,7 @@ import adcsim.utils.*
 %% 1. Parameter Recovery and Initialization
 %%% Time parameters assuming uniform time steps
 t = time.t;         % Full time vector.
-n = time.n;         % Total number of time points.
+n = time.nSteps;         % Total number of time points.
 dt = t(2) - t(1);   % Simulation (integration) time step.
 
 %%% Desired states (Setpoint)
