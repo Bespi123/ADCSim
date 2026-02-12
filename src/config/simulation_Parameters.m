@@ -1,9 +1,18 @@
-function parameters = simulationParameters(~)
+function parameters = simulation_Parameters(~)
     import org.orekit.utils.Constants;
 
     % This function defines all configurable parameters for the CubeSat ADCS simulation.
     % It returns a single structure 'parameters' that contains all nested sub-structures
     % for different components of the simulation (e.g., initial values, sensors, control).
+
+    % --- Simulation Parametets ---
+    parameters.sim.t0    = 0;
+    parameters.sim.tf    = 30;
+    parameters.sim.step  = 1E-4;
+    parameters.sim.t  = parameters.sim.t0:parameters.sim.step:parameters.sim.tf;
+    
+    % Simulation length
+    parameters.sim.nSteps = length(parameters.sim.t);
 
     % --- CubeSat Physical Parameters ---
     % Inertia tensor of the CubeSat [kg*m^2]. This represents the distribution of mass
@@ -25,7 +34,7 @@ function parameters = simulationParameters(~)
     
     % Sample time for the gyroscope sensor [s]. Gyros are often sampled at a higher
     % rate because they are used for high-frequency state propagation in the AHRS.
-    parameters.sensors.gyro.Ts      = 0.005; % 200 Hz
+    parameters.sensors.gyro.Ts           = 0.005; % 200 Hz
     parameters.sensors_soph.gyro.Ts      = 0.005; % 200 Hz
 
     % Sample time for other attitude sensors (Accelerometer, Magnetometer, Star Tracker) [s].
@@ -116,7 +125,6 @@ function parameters = simulationParameters(~)
     % ADC Resolution [bits].
     parameters.sensors_soph.acc.bits = 12;
 
-
     %%% Magnetometer (Sophisticated Model)
     parameters.sensors_soph.mag.m_I = parameters.sensors.mag.m_I;
     % Constant bias [uT or normalized units].
@@ -194,7 +202,6 @@ function parameters = simulationParameters(~)
     parameters.ahrs.ukf.mag_std  = [0.011817097; 0.012306208; 0.015949601];
     parameters.ahrs.ukf.star_std  = 1E-3 * [1; 1; 1];
     
-
     % CKF (Cubature Kalman Filter) parameters
     parameters.ahrs.ckf = struct( ...
     'gyro_std',  [0.002; 0.002; 0.002], ...
@@ -243,6 +250,14 @@ function parameters = simulationParameters(~)
     % Flag to enable (2) or disable (1) variable disturbances.
     parameters.disturbances.variable.enable = 1;
     
+    % Array to store torques
+    parameters.disturbances.torque.total          = zeros(3, parameters.sim.nSteps); % Torque control
+    parameters.disturbances.torque.gravity_torque = zeros(3, parameters.sim.nSteps); % Torque control
+    parameters.disturbances.torque.drag_torque    = zeros(3, parameters.sim.nSteps); % Torque control
+    parameters.disturbances.torque.third_body_sun_torque  = zeros(3, parameters.sim.nSteps); % Torque control
+    parameters.disturbances.torque.third_body_moon_torque = zeros(3, parameters.sim.nSteps); % Torque control
+    parameters.disturbances.torque.solar_torque   = zeros(3, parameters.sim.nSteps); % Torque control
+  
     % --- Reaction Wheels (Actuators) Configuration ---
     % Number of reaction wheels in the assembly.
     parameters.rw.number = 3;
