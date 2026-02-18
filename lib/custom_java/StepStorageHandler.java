@@ -125,11 +125,34 @@ public class StepStorageHandler implements OrekitFixedStepHandler {
 
             // Compute geomagnetic field (NED components, Tesla)
             final GeoMagneticElements e = magModel.calculateField(lat, lon, h);
-            final Vector3D Bned = e.getFieldVector();
+            final Vector3D Bned = e.getFieldVector(); // (BN, BE, BD)
+            
+            // Build NED unit vectors expressed in ITRF
+            double sLat = Math.sin(lat), cLat = Math.cos(lat);
+            double sLon = Math.sin(lon), cLon = Math.cos(lon);
 
-            stepData[19] = Bned.getX(); // BN
-            stepData[20] = Bned.getY(); // BE
-            stepData[21] = Bned.getZ(); // BD
+            Vector3D eE = new Vector3D(-sLon,  cLon, 0.0);             // East
+            Vector3D eN = new Vector3D(-sLat*cLon, -sLat*sLon, cLat);  // North
+            Vector3D eD = new Vector3D(-cLat*cLon, -cLat*sLon, -sLat); // Down (= -Up)
+            
+            // Convert NED to ITRF
+            double BN = Bned.getX();
+            double BE = Bned.getY();
+            double BD = Bned.getZ();
+            
+            Vector3D Bitrf = eN.scalarMultiply(BN)
+                        .add(eE.scalarMultiply(BE))
+                        .add(eD.scalarMultiply(BD));
+            
+            // Convert ITRF -> GCRF (vector transform, NOT position)
+            Frame gcrf = FramesFactory.getGCRF();
+            Transform itrfToGcrf = itrf.getTransformTo(gcrf, date);
+            Vector3D Bgcrf = itrfToGcrf.transformVector(Bitrf);
+            
+            // Store inertial B components (Tesla) in history columns 20–22
+            stepData[19] = Bgcrf.getX(); // B_X_GCRF
+            stepData[20] = Bgcrf.getY(); // B_Y_GCRF
+            stepData[21] = Bgcrf.getZ(); // B_Z_GCRF
 
             // If you prefer nanoTesla:
             // stepData[19] = Bned.getX() * 1e9;
