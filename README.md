@@ -61,9 +61,9 @@ For the software to work, you must place the required files in the correct folde
     * **Link:** [https://www.orekit.org/static/downloads.html](https://www.orekit.org/static/downloads.html).
     * **Action:** Unzip the file and place the resulting `orekit-data` folder **inside the `lib/orekit/orekit-data` folder**.
 
-4.  **Download IGRF-14 geomagnetic model:** Download the `IGRF14_Windows.COF` file from the tutorials link.
+4.  **Download IGRF-14 geomagnetic model:** Download the `IGRF14_Windows.COF` file from the link.
     * **Link:** [https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field](https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field)
-    * **Action** Unzip the file, rename it as `IGRF.COF` and place the resultin file **inside the `lib/orekit/orekit-data` folder**.
+    * **Action** Unzip the file, rename it as `IGRF.COF`, and place the resulting file **inside the `lib/orekit/orekit-data` folder**.
 
 6. **Compile the Java Handler:** Before running the main program, you must compile the custom Java handler.
     * Open MATLAB
