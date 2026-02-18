@@ -2,102 +2,157 @@ import org.orekit.propagation.SpacecraftState;
 import org.orekit.propagation.sampling.OrekitFixedStepHandler;
 import org.orekit.forces.ForceModel;
 import org.orekit.time.AbsoluteDate;
+
 import org.hipparchus.geometry.euclidean.threed.Vector3D;
 import java.util.ArrayList;
 import java.util.List;
 
+// --- Frames + Tierra + Geomag ---
+import org.orekit.frames.Frame;
+import org.orekit.frames.FramesFactory;
+import org.orekit.frames.Transform;
+import org.orekit.utils.IERSConventions;
+import org.orekit.bodies.OneAxisEllipsoid;
+import org.orekit.bodies.GeodeticPoint;
+
+import org.orekit.models.earth.GeoMagneticField;
+import org.orekit.models.earth.GeoMagneticElements;
+
 /**
  * A custom Orekit step handler designed to store detailed simulation data for analysis in MATLAB.
- * <p>
- * This class is called by an Orekit propagator at fixed time intervals. At each step, it records:
- * <ul>
- * <li>The simulation time elapsed since the initial date.</li>
- * <li>The spacecraft's position vector (x, y, z).</li>
- * <li>The acceleration vector produced by <strong>each individual force model</strong>.</li>
- * </ul>
- * The data is stored in an ArrayList and can be retrieved as a 2D double array, which is ideal for MATLAB.
+ *
+ * Stores at each fixed step:
+ *  - time since initialDate [s]
+ *  - position (x,y,z) in the state's frame
+ *  - acceleration (ax,ay,az) for each ForceModel (up to 5 forces -> 15 values)
+ *  - geomagnetic field components (BN, BE, BD) in local NED [Tesla]
+ *
+ * Total columns:
+ *  1 (time) + 3 (pos) + 5*3 (forces) + 3 (B) = 22
  */
-
 public class StepStorageHandler implements OrekitFixedStepHandler {
 
+    // --- CONFIG: expected forces block size ---
+    // Indices:
+    // 0    = time
+    // 1..3 = position
+    // 4..18 = force accelerations (max 5 forces * 3)
+    // 19..21 = BN, BE, BD
+    private static final int FORCES_BLOCK_END_EXCLUSIVE = 19; // last valid force index is 18
+    private static final int N_COLS = 22;
+
     // --- CLASS FIELDS ---
-    /** The list of force models used in the simulation, provided by the calling environment (MATLAB). */
     private final List<ForceModel> forceModels;
-    /** The start date of the propagation, used as the reference for time stamps (t=0). */
     private final AbsoluteDate initialDate;
-    /** The main storage for the simulation data. Each entry is a double array representing one time step. */
     private final ArrayList<double[]> history = new ArrayList<>();
-    
-    /**
-     * Constructs the step handler.
-     * <p>
-     * This constructor receives all necessary dependencies from the calling environment (MATLAB)
-     * before the propagation starts.
-     *
-     * @param forceModels The list of {@link ForceModel} objects whose accelerations will be recorded.
-     * @param initialDate The absolute start date of the simulation.
-     */
-    public StepStorageHandler(final List<ForceModel> forceModels, final AbsoluteDate initialDate) {
-        this.forceModels = forceModels;
-        this.initialDate = initialDate;
-    }
+
+    // --- Geomagnetic dependencies ---
+    private final OneAxisEllipsoid earth;
+    private final Frame itrf;
+    private final GeoMagneticField magModel;
 
     /**
-     * This method is called by the Orekit propagator at each fixed time step.
-     * <p>
-     * It extracts the current state, calculates the acceleration from each individual force model,
-     * and stores all the data in the history list.
+     * Constructs the step handler.
      *
-     * @param currentState The current state of the spacecraft provided by the propagator.
+     * @param forceModels The list of ForceModel objects whose accelerations will be recorded.
+     * @param initialDate The absolute start date of the simulation.
+     * @param earth       OneAxisEllipsoid Earth model (used to convert ITRF position to lat/lon/alt).
+     * @param magModel    GeoMagneticField model instance (e.g., WMM or IGRF) for a given epoch.
      */
+    public StepStorageHandler(final List<ForceModel> forceModels,
+                              final AbsoluteDate initialDate,
+                              final OneAxisEllipsoid earth,
+                              final GeoMagneticField magModel) {
+        this.forceModels = forceModels;
+        this.initialDate = initialDate;
+        this.earth = earth;
+        this.magModel = magModel;
+        this.itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, true);
+    }
+
     @Override
-    public void handleStep(SpacecraftState currentState) {
-        // Get the elapsed time in seconds from the start of the simulation.
-        double time = currentState.getDate().durationFrom(this.initialDate);
-        // Get the current position vector
-        Vector3D pos = currentState.getPosition();
-        
-        // Prepare a new array to hold all data for this specific time step.
-        // Array size is 19: 1 (time) + 3 (position) + 5 forces * 3 (acceleration components) = 19
-        double[] stepData = new double[19]; 
+    public void handleStep(final SpacecraftState currentState) {
+
+        // Time since start [s]
+        final double time = currentState.getDate().durationFrom(this.initialDate);
+
+        // Position in the state's frame (likely inertial)
+        final Vector3D pos = currentState.getPosition();
+
+        // Allocate row
+        final double[] stepData = new double[N_COLS];
+
+        // Fill time + position
         stepData[0] = time;
         stepData[1] = pos.getX();
         stepData[2] = pos.getY();
         stepData[3] = pos.getZ();
-        
-        // --- Use the stored list of forces directly ---
-        // There is no need to call propagator.getForceModels() anymore.
+
+        // --- Acceleration per force model ---
+        // Forces occupy indices [4..18]. We do NOT write beyond 18 to protect B columns.
         for (int i = 0; i < this.forceModels.size(); i++) {
-            ForceModel force = this.forceModels.get(i);
-            // Calculate the acceleration vector for this specific force model.
-            Vector3D acceleration = force.acceleration(currentState, force.getParameters());
-            
-            // Calculate the base index in the array for this force's data.
-            // Force 0 (Gravity) -> index 4; Force 1 (Drag) -> index 7, etc.
-            int baseIndex = 4 + (i * 3);
-            if (baseIndex + 2 < stepData.length) {
-                stepData[baseIndex]     = acceleration.getX();
-                stepData[baseIndex + 1] = acceleration.getY();
-                stepData[baseIndex + 2] = acceleration.getZ();
+
+            final int baseIndex = 4 + (i * 3);
+
+            // Only write if it fits inside the dedicated forces block.
+            if (baseIndex + 2 < FORCES_BLOCK_END_EXCLUSIVE) {
+                final ForceModel force = this.forceModels.get(i);
+                final Vector3D a = force.acceleration(currentState, force.getParameters());
+
+                stepData[baseIndex]     = a.getX();
+                stepData[baseIndex + 1] = a.getY();
+                stepData[baseIndex + 2] = a.getZ();
+            } else {
+                // If you have more than 5 forces, extra forces are ignored here.
+                // (Alternatively, you could resize N_COLS and store them.)
+                break;
             }
         }
 
-        // Add the complete data array for this step to the history list.
+        // --- Geomagnetic field BN, BE, BD (Tesla) ---
+        try {
+            final AbsoluteDate date = currentState.getDate();
+
+            // Transform position to ITRF
+            final Transform t = currentState.getFrame().getTransformTo(itrf, date);
+            final Vector3D rITRF = t.transformPosition(currentState.getPVCoordinates().getPosition());
+
+            // Convert to geodetic lat/lon/alt
+            final GeodeticPoint gp = earth.transform(rITRF, itrf, date);
+            final double lat = gp.getLatitude();   // rad
+            final double lon = gp.getLongitude();  // rad
+            final double h   = gp.getAltitude();   // m
+
+            // Compute geomagnetic field (NED components, Tesla)
+            final GeoMagneticElements e = magModel.calculateField(lat, lon, h);
+            final Vector3D Bned = e.getFieldVector();
+
+            stepData[19] = Bned.getX(); // BN
+            stepData[20] = Bned.getY(); // BE
+            stepData[21] = Bned.getZ(); // BD
+
+            // If you prefer nanoTesla:
+            // stepData[19] = Bned.getX() * 1e9;
+            // stepData[20] = Bned.getY() * 1e9;
+            // stepData[21] = Bned.getZ() * 1e9;
+
+        } catch (Exception ex) {
+            stepData[19] = Double.NaN;
+            stepData[20] = Double.NaN;
+            stepData[21] = Double.NaN;
+        }
+
+        // Store row
         history.add(stepData);
     }
 
     /**
      * Retrieves the complete simulation history as a 2D array.
-     * <p>
-     * This method is intended to be called from MATLAB after the propagation is complete.
-     * It converts the internal ArrayList into a primitive 2D double array, which is
-     * easily handled by MATLAB.
      *
-     * @return A 2D double array where each row represents a time step and the columns
-     * contain the stored data [time, x, y, z, ax1, ay1, az1, ax2, ...].
+     * @return A 2D double array where each row is one time step.
      */
     public double[][] getHistory() {
-        double[][] historyArray = new double[history.size()][19];
+        final double[][] historyArray = new double[history.size()][N_COLS];
         for (int i = 0; i < history.size(); i++) {
             historyArray[i] = history.get(i);
         }
