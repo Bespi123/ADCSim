@@ -18,9 +18,11 @@ function parameters = simulation_Parameters(~)
     % Inertia tensor of the CubeSat [kg*m^2]. This represents the distribution of mass
     % and how the satellite resists rotational motion. Off-diagonal terms represent
     % products of inertia.
-    parameters.initialValues.I = 1E-3 * [3.084 0.082 -0.054;
-                                         0.082 3.132 0.016;
-                                        -0.054 0.016 3.540];
+    parameters.spacecraft.I = 1E-3 * [3.084 0.082 -0.054;
+                                      0.082 3.132 0.016;
+                                     -0.054 0.016 3.540];
+
+
     % Initial attitude quaternion [w, x, y, z]' (scalar-first format). 
     % Represents the initial orientation of the CubeSat relative to the inertial frame.
     parameters.initialValues.q0 = [1; 0; 0; 0]; % Starts with no rotation.
@@ -234,7 +236,7 @@ function parameters = simulation_Parameters(~)
     parameters.controller.boskController.k0    = 1;     % Initial gain value.
     
     % --- Disturbance Torque Parameters ---
-    % These model external torques acting on the satellite (e.g., solar pressure, drag).
+    % These model external torques acting on the satellite.
     % Constant disturbance torque components [Nm].
     parameters.disturbances.constant.Tdx = 0.001;
     parameters.disturbances.constant.Tdy = 0.001;
@@ -249,14 +251,15 @@ function parameters = simulation_Parameters(~)
     parameters.disturbances.variable.w3  = 3.00;   % Frequency for z-axis
     % Flag to enable (2) or disable (1) variable disturbances.
     parameters.disturbances.variable.enable = 1;
-    
+
+    % Flag to enable (2) or disable (1) disturbances obtained usding Orekit [Nm].
+    parameters.disturbances.model_propagator.enable = 1;
+
     % Array to store torques
-    parameters.disturbances.torque.total          = zeros(3, parameters.sim.nSteps); % Torque control
-    parameters.disturbances.torque.gravity_torque = zeros(3, parameters.sim.nSteps); % Torque control
-    parameters.disturbances.torque.drag_torque    = zeros(3, parameters.sim.nSteps); % Torque control
-    parameters.disturbances.torque.third_body_sun_torque  = zeros(3, parameters.sim.nSteps); % Torque control
-    parameters.disturbances.torque.third_body_moon_torque = zeros(3, parameters.sim.nSteps); % Torque control
-    parameters.disturbances.torque.solar_torque   = zeros(3, parameters.sim.nSteps); % Torque control
+    parameters.disturbances.torque.total          = zeros(3, parameters.sim.nSteps); % Total torque [Nm]
+    parameters.disturbances.torque.gravity_torque = zeros(3, parameters.sim.nSteps); % Grav gradient torque [Nm]
+    parameters.disturbances.torque.drag_torque    = zeros(3, parameters.sim.nSteps); % drag torque [Nm]
+    parameters.disturbances.torque.solar_torque   = zeros(3, parameters.sim.nSteps); % Solar rad torque [Nm]
   
     % --- Reaction Wheels (Actuators) Configuration ---
     % Number of reaction wheels in the assembly.

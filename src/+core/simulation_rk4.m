@@ -47,7 +47,7 @@ wd = repmat(simParameters.setPoint.Wd',n, 1)';    % Desired angular velocity.
 
 %%% Disturbances and Inertia
 Td = disturbances; % External disturbance torque.
-I = simParameters.initialValues.I; % CubeSat's inertia matrix.
+I = simParameters.spacecraft.I; % CubeSat's inertia matrix.
 
 %%% Error flag
 error_flag = 0; % Initialized to 0 (no error).
