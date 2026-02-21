@@ -4,6 +4,8 @@ import org.orekit.forces.ForceModel;
 import org.orekit.time.AbsoluteDate;
 
 import org.hipparchus.geometry.euclidean.threed.Vector3D;
+import org.hipparchus.geometry.euclidean.threed.Rotation;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,6 +13,9 @@ import java.util.List;
 import org.orekit.frames.Frame;
 import org.orekit.frames.FramesFactory;
 import org.orekit.frames.Transform;
+import org.orekit.frames.LOFType;
+
+import org.orekit.utils.PVCoordinates;
 import org.orekit.utils.IERSConventions;
 import org.orekit.bodies.OneAxisEllipsoid;
 import org.orekit.bodies.GeodeticPoint;
@@ -22,24 +27,28 @@ import org.orekit.models.earth.GeoMagneticElements;
  * A custom Orekit step handler designed to store detailed simulation data for analysis in MATLAB.
  *
  * Stores at each fixed step:
- *  - time since initialDate [s]
- *  - position (x,y,z) in the state's frame
- *  - acceleration (ax,ay,az) for each ForceModel (up to 5 forces -> 15 values)
- *  - geomagnetic field components (BN, BE, BD) in local NED [Tesla]
+ * - time since initialDate [s]
+ * - position (x,y,z) in the state's frame
+ * - velocity (vx,vy,vz) in the state's frame
+ * - acceleration (ax,ay,az) for each ForceModel (up to 5 forces -> 15 values)
+ * - geomagnetic field components (B_x, B_y, B_z) in GCRF [Tesla]
+ * - quaternion (q0, q1, q2, q3) for GCRF to LVLH rotation
  *
  * Total columns:
- *  1 (time) + 3 (pos) + 5*3 (forces) + 3 (B) = 22
+ * 1 (time) + 3 (pos) + 3 (vel) + 5*3 (forces) + 3 (B) + 4 (Quat) = 29
  */
 public class StepStorageHandler implements OrekitFixedStepHandler {
 
     // --- CONFIG: expected forces block size ---
     // Indices:
     // 0    = time
-    // 1..3 = position
-    // 4..18 = force accelerations (max 5 forces * 3)
-    // 19..21 = BN, BE, BD
-    private static final int FORCES_BLOCK_END_EXCLUSIVE = 19; // last valid force index is 18
-    private static final int N_COLS = 22;
+    // 1..3 = position (X, Y, Z)
+    // 4..6 = velocity (Vx, Vy, Vz)
+    // 7..21 = force accelerations (max 5 forces * 3)
+    // 22..24 = B_X, B_Y, B_Z (GCRF)
+    // 25..28 = q0, q1, q2, q3 (Quaternion GCRF -> LVLH)
+    private static final int FORCES_BLOCK_END_EXCLUSIVE = 22; // last valid force index is 21
+    private static final int N_COLS = 29;
 
     // --- CLASS FIELDS ---
     private final List<ForceModel> forceModels;
@@ -76,23 +85,27 @@ public class StepStorageHandler implements OrekitFixedStepHandler {
         // Time since start [s]
         final double time = currentState.getDate().durationFrom(this.initialDate);
 
-        // Position in the state's frame (likely inertial)
+        // Position and Velocity in the state's frame
         final Vector3D pos = currentState.getPosition();
+        final Vector3D vel = currentState.getPVCoordinates().getVelocity();
 
         // Allocate row
         final double[] stepData = new double[N_COLS];
 
-        // Fill time + position
+        // Fill time + position + velocity
         stepData[0] = time;
         stepData[1] = pos.getX();
         stepData[2] = pos.getY();
         stepData[3] = pos.getZ();
+        stepData[4] = vel.getX();
+        stepData[5] = vel.getY();
+        stepData[6] = vel.getZ();
 
         // --- Acceleration per force model ---
-        // Forces occupy indices [4..18]. We do NOT write beyond 18 to protect B columns.
+        // Forces occupy indices [7..21]. We do NOT write beyond 21 to protect B columns.
         for (int i = 0; i < this.forceModels.size(); i++) {
 
-            final int baseIndex = 4 + (i * 3);
+            final int baseIndex = 7 + (i * 3);
 
             // Only write if it fits inside the dedicated forces block.
             if (baseIndex + 2 < FORCES_BLOCK_END_EXCLUSIVE) {
@@ -150,19 +163,47 @@ public class StepStorageHandler implements OrekitFixedStepHandler {
             Vector3D Bgcrf = itrfToGcrf.transformVector(Bitrf);
             
             // Store inertial B components (Tesla) in history columns 20–22
-            stepData[19] = Bgcrf.getX(); // B_X_GCRF
-            stepData[20] = Bgcrf.getY(); // B_Y_GCRF
-            stepData[21] = Bgcrf.getZ(); // B_Z_GCRF
+            stepData[22] = Bgcrf.getX(); // B_X_GCRF
+            stepData[23] = Bgcrf.getY(); // B_Y_GCRF
+            stepData[24] = Bgcrf.getZ(); // B_Z_GCRF
 
             // If you prefer nanoTesla:
-            // stepData[19] = Bned.getX() * 1e9;
-            // stepData[20] = Bned.getY() * 1e9;
-            // stepData[21] = Bned.getZ() * 1e9;
+            // stepData[22] = Bned.getX() * 1e9;
+            // stepData[23] = Bned.getY() * 1e9;
+            // stepData[24] = Bned.getZ() * 1e9;
 
         } catch (Exception ex) {
-            stepData[19] = Double.NaN;
-            stepData[20] = Double.NaN;
-            stepData[21] = Double.NaN;
+            stepData[22] = Double.NaN;
+            stepData[23] = Double.NaN;
+            stepData[24] = Double.NaN;
+        }
+
+        // --- Acttitude: Quaternion from GCRF to LVLH ---
+        try {
+            final AbsoluteDate date = currentState.getDate();
+            final Frame gcrf = FramesFactory.getGCRF();
+            
+            // Transform PV to inertial frame GCRF
+            final Transform stateToGcrf = currentState.getFrame().getTransformTo(gcrf, date);
+            final PVCoordinates pvGcrf = stateToGcrf.transformPVCoordinates(currentState.getPVCoordinates());
+            
+            // Get transformation to LVLH
+            final Transform gcrfToLvlh = LOFType.LVLH.transformFromInertial(date, pvGcrf);
+            
+            // Get quaternion
+            final Rotation q_gcrf_lvlh = gcrfToLvlh.getRotation();
+            
+            // Save components (Q0 is the scalar component in Hipparchus)
+            stepData[25] = q_gcrf_lvlh.getQ0(); 
+            stepData[26] = q_gcrf_lvlh.getQ1(); 
+            stepData[27] = q_gcrf_lvlh.getQ2(); 
+            stepData[28] = q_gcrf_lvlh.getQ3(); 
+
+        } catch (Exception ex) {
+            stepData[25] = Double.NaN;
+            stepData[26] = Double.NaN;
+            stepData[27] = Double.NaN;
+            stepData[28] = Double.NaN;
         }
 
         // Store row
