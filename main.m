@@ -37,7 +37,7 @@ fprintf('\n');
 
 %% 3. Launch the GUIDE Application
 % Call the main GUIDE file by its name to open the graphical interface.
-% !!! IMPORTANT: Replace 'my_guide_app' with the actual name of your GUIDE file.
+% !!! IMPORTANT: Replace 'ADCS_program' with the actual name of your GUIDE file.
 ADCS_program;
 
 disp('GUI launched successfully.');
