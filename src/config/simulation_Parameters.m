@@ -18,9 +18,9 @@ function parameters = simulation_Parameters(~)
     % Inertia tensor of the CubeSat [kg*m^2]. This represents the distribution of mass
     % and how the satellite resists rotational motion. Off-diagonal terms represent
     % products of inertia.
-    parameters.spacecraft.I = 1E-3 * [3.084 0.082 -0.054;
-                                      0.082 3.132 0.016;
-                                     -0.054 0.016 3.540];
+    parameters.spacecraft.I = 1E-3 * [8.460 0.082 -0.054;
+                                      0.082 8.46 0.016;
+                                     -0.054 0.016 8.46];
 
 
     % Initial attitude quaternion [w, x, y, z]' (scalar-first format). 
