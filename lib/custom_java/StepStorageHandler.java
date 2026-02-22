@@ -188,7 +188,8 @@ public class StepStorageHandler implements OrekitFixedStepHandler {
             final PVCoordinates pvGcrf = stateToGcrf.transformPVCoordinates(currentState.getPVCoordinates());
             
             // Get transformation to LVLH
-            final Transform gcrfToLvlh = LOFType.LVLH.transformFromInertial(date, pvGcrf);
+            //final Transform gcrfToLvlh = LOFType.LVLH.transformFromInertial(date, pvGcrf);
+            final Transform gcrfToLvlh = LOFType.LVLH_CCSDS.transformFromInertial(date, pvGcrf);
             
             // Get quaternion
             final Rotation q_gcrf_lvlh = gcrfToLvlh.getRotation();
