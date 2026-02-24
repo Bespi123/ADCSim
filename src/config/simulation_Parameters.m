@@ -260,7 +260,7 @@ function parameters = simulation_Parameters(~)
     parameters.disturbances.torque.gravity_torque = zeros(3, parameters.sim.nSteps); % Grav gradient torque [Nm]
     parameters.disturbances.torque.drag_torque    = zeros(3, parameters.sim.nSteps); % drag torque [Nm]
     parameters.disturbances.torque.solar_torque   = zeros(3, parameters.sim.nSteps); % Solar rad torque [Nm]
-  
+   
     % --- Reaction Wheels (Actuators) Configuration ---
     % Number of reaction wheels in the assembly.
     parameters.rw.number = 3;
@@ -314,7 +314,12 @@ function parameters = simulation_Parameters(~)
     parameters.spacecraft.dragCoeff  = 2.2;   % unitless
     parameters.spacecraft.srpArea    = 1.0;   % m^2
     parameters.spacecraft.srpCoeff   = 1.2;   % unitless (Cr)
-    
+
+    % Vector from Center of Mass to Center of Pressure (Atmospheric Drag)
+    parameters.spacecraft.r_cp_cg   = [0.03, 0.01, 0.01]; %body frame
+    % Vector from Center of Mass to Center of Solar Pressure (SRP)
+    parameters.spacecraft.r_sun_cg  = [0.03, 0.01, 0.01]; %body frame
+
     % --- Simulation Duration & Output ---
     parameters.duration.num_orbits = 3;
     parameters.output.stepSize     = 60.0; % Time step for data logging (seconds)

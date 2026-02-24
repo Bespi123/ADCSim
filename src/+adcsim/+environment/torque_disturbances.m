@@ -1,53 +1,126 @@
 classdef torque_disturbances
-    %UNTITLED Summary of this class goes here
-    %   Detailed explanation goes here
-
+    % TORQUE_DISTURBANCES Models environmental disturbance torques for a satellite.
+    %
+    %   This class calculates the three primary external torques affecting 
+    %   a satellite's attitude in Low Earth Orbit (LEO): Gravity Gradient, 
+    %   Atmospheric Drag, and Solar Radiation Pressure (SRP).
+    
     properties
-        satellite %satellite object
-        
+        satellite     % Struct containing physical properties: I (Inertia), mass, r_cp_cg, etc.
+        time          % Simulation time vector (from Orekit).
+        accel_drag    % (Nx3) matrix of drag acceleration in GCRF frame [m/s^2].
+        accel_srp     % (Nx3) matrix of SRP acceleration in GCRF frame [m/s^2].
+        quaternions   % (Nx4) quaternion from lvlh to gcrf
     end
-
+    
     methods
-        function obj = gravity_torque_model(state, sat, orbit, eart)
-        % DIST_GRAVITYGRAD Calcula el torque por gradiente de gravedad.
-        % Útil para satélites con inercias asimétricas como un CubeSat 12U.
-        
-            % 1. Extraer cuaternión (asumiendo formato [q_w, q_x, q_y, q_z])
-            q = state(7:10);
-            q = q / norm(q); % Normalización de seguridad
-        
-            % 2. Parámetros orbitales
-            % Usar mu desde la estructura earth si está disponible, sino el estándar
-            if isfield(earth, 'mu')
-                mu = earth.mu;
-            else
-                mu = 3.986004418e14; % [m^3/s^2]
-            end
+        function obj = torque_disturbances(sat_object, orekit_results)
+            % TORQUE_DISTURBANCES Class Constructor.
+            %   Initializes satellite properties and extracts relevant data 
+            %   from Orekit propagator results.
+            obj.satellite  = sat_object;
+            obj.time       = orekit_results(:,1);
+            obj.accel_drag = orekit_results(:,11:13);
+            obj.accel_srp  = orekit_results(:,20:22);
+            obj.quaternions = orekit_results(:, 26:29);
+        end
+
+        function Tgg = gravity_torque_model(obj, quaternions, orbit)
+            % GRAVITY_TORQUE_MODEL Calculates the Gravity Gradient Torque.
+            %
+            %   Implements the equation: Tgg = 3 * w_o^2 * (u_z x (I * u_z))
+            %   where u_z is the nadir unit vector in the Body Frame.
+            %
+            %   INPUTS:
+            %       quaternions - (Nx4) Matrix of quaternions [q_w, q_x, q_y, q_z].
+            %       orbit       - Struct with orbital parameters (a = semi-major axis).
+            %
+            %   OUTPUT:
+            %       Tgg         - (Nx3) Matrix of gravity gradient torques [N*m].
+
+            import org.orekit.utils.Constants;
             
-            rc = earth.Radius + orbit.altitude;
-            omega_o_sq = mu / rc^3; % Velocidad orbital al cuadrado (w_o^2)
+            % 1. Physical and Inertial Parameters
+            sat_inertia = obj.satellite.I;
+            mu = Constants.EGM96_EARTH_MU; 
+             
+            % 2. Normalize Quaternions and calculate orbital angular velocity
+            q = quaternions ./ sqrt(sum(quaternions.^2, 2));
+            omega_o_sq = mu ./ (orbit.a.^3); 
         
-            % 3. Dirección del Nadir en el marco del cuerpo (Body Frame)
-            % Representa la dirección hacia el centro de la Tierra
-            c3 = [2*(q(2)*q(4) - q(3)*q(1));
-                  2*(q(3)*q(4) + q(2)*q(1));
-                  1 - 2*(q(2)^2 + q(3)^2)];
+            % 3. Extract Nadir Direction (c3) from Quaternions
+            % Represents the 3rd row of the Direction Cosine Matrix (GCRF -> Body)
+            c3 = [2.*(q(:,2).*q(:,4) - q(:,3).*q(:,1)), ...
+                  2.*(q(:,3).*q(:,4) + q(:,2).*q(:,1)), ...
+                  1 - 2.*(q(:,2).^2 + q(:,3).^2)]; 
         
-            % 4. Cálculo del Torque de Gradiente de Gravedad
-            % Tgg = 3 * w_o^2 * (n x (I * n))
-            Tgg = 3 * omega_o_sq * cross(c3, sat.Is * c3);
+            % 4. Vectorized Torque Calculation: Tgg = 3 * w_o^2 * (c3 x (I * c3))
+            I_times_c3 = c3 * sat_inertia'; 
+            Tgg = 3 .* omega_o_sq .* cross(c3, I_times_c3, 2);
         end
 
-        function outputArg = drag_torque_model(obj,inputArg)
-            %METHOD1 Summary of this method goes here
-            %   Detailed explanation goes here
-            outputArg = obj.Property1 + inputArg;
+        function Td = drag_torque_model(obj)
+            % DRAG_TORQUE_MODEL Calculates Atmospheric Drag Torque.
+            %
+            %   Calculates the drag force from inertial acceleration and 
+            %   rotates it to the Body Frame to determine the torque.
+            
+            import adcsim.utils.*
+            
+            quat = obj.quaternions;
+            sat_mass = obj.satellite.mass;
+            r_cp_cg = obj.satellite.r_cp_cg; % Lever arm in Body Frame [m]
+
+            % Drag Force in Inertial Frame (GCRF)
+            F_drag_gcrf = sat_mass * obj.accel_drag;
+            
+            % Rotate Force to Body Frame using Attitude Quaternions
+            % Note: This assumes quaternions represent LVLH -> GCRF and
+            % The body frame is aligned with the LVLH
+            F_drag_body = quatRotation(quaternConj(quat), F_drag_gcrf);
+            
+            % Torque Calculation: T = r x F (Row-wise cross product)
+            % We replicate the lever arm vector to match the number of time steps
+            Td = cross(repmat(r_cp_cg, size(F_drag_body, 1), 1), F_drag_body, 2);
         end
 
-        function outputArg = solar_torque_model(obj,inputArg)
-            %METHOD1 Summary of this method goes here
-            %   Detailed explanation goes here
-            outputArg = obj.Property1 + inputArg;
+        function Tsrp = solar_torque_model(obj)
+            % SOLAR_TORQUE_MODEL Calculates the Solar Radiation Pressure (SRP) torque.
+            %
+            %   This function computes the disturbance torque generated by solar 
+            %   photons hitting the satellite surfaces. It transforms the 
+            %   inertial SRP force into the Body Frame and applies the 
+            %   lever arm relative to the Center of Mass.
+            %
+            %   OUTPUT:
+            %       Tsrp - (Nx3) matrix of SRP torques in Body Frame [N*m].
+            %
+            %   PHYSICS:
+            %       The torque is calculated using the vector cross product:
+            %       T = r_arm x F_srp
+            %       where r_arm is the offset from the Center of Mass to the 
+            %       effective Center of Solar Pressure.
+            
+            import adcsim.utils.*
+            % 1. Extract attitude and mass properties
+            quat = obj.quaternions;        % Attitude quaternion (GCRF to Body)
+            sat_mass = obj.satellite.mass; % Spacecraft mass [kg]
+            
+            % 2. Retrieve the solar lever arm [m]
+            % Vector from Center of Mass to the Solar Pressure Center
+            r_arm = obj.satellite.r_sun_cg;
+            
+            % 3. Calculate Force in Inertial Frame (GCRF)
+            % F = m * a
+            F_srp_gcrf = sat_mass * obj.accel_srp;
+            
+            % 4. Transform Force to Satellite Body Frame
+            % Uses the conjugate quaternion to rotate from GCRF to Body Frame
+            F_srp_body = quatRotation(quaternConj(quat), F_srp_gcrf);
+            
+            % 5. Compute Torque [N*m]
+            % Performs a row-wise cross product between the lever arm and the force
+            Tsrp = cross(repmat(r_arm, size(F_srp_body, 1), 1), F_srp_body, 2); 
         end
     end
 end
