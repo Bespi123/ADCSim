@@ -1,4 +1,4 @@
-function costs_vector = ekfObjectiveFunction(params, disturbances, simParameters, time)
+function costs_vector = objective_function_ahrs(params, simParameters, simResults)
     import core.*
     
     % ekfObjectiveFunction - Evaluates the cost of a set of EKF parameters using a
@@ -46,11 +46,10 @@ function costs_vector = ekfObjectiveFunction(params, disturbances, simParameters
     % Run the simulation multiple times to average out the effects of random noise.
     for i = 1:num_simulations
         try
-            % Use dump variable
-            dump = 0;
+           
             % Run the main simulation function. It's assumed that this function
             % uses different random noise on each call.
-            [~, ~, ~, ~, indicators, ~, ~, error_flag] = simulation_rk4(dump, disturbances, simParameters, time);
+            [~, ~, ~, ~, indicators, ~, ~, error_flag] = simulation_rk4(simParameters, simResults, false);
             
             if error_flag
                 % If the simulation reports an error (e.g., divergence),
