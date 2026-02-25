@@ -1,4 +1,5 @@
-function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag] = simulation_rk4(~,disturbances,simParameters,time)
+%function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag] = simulation_rk4(~,disturbances,simParameters,time)
+function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag] = simulation_rk4(~,simParameters, simResults)
 %SIMULATION_RK4 Simulates CubeSat attitude dynamics with multi-rate sampling.
 %
 % This function simulates the attitude dynamics of a CubeSat using a Runge-Kutta 4
@@ -8,7 +9,7 @@ function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag]
 %
 % Author: bespi123
 % Creation Date: 2023-10-27
-% Last Modified: 2025-10-13
+% Last Modified: 2026-02-24
 %
 % Inputs:
 %   ~             - Placeholder for the UI application object, unused here.
@@ -31,13 +32,11 @@ function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag]
 
 %%% Import adsim utilities
 import adcsim.utils.*
-%%% Import environment to use python libraries
-%pyenv("Version", "D:\git\Satellite_ADCS_GUIDE\.venv\Scripts\python.exe"); 
 
 %% 1. Parameter Recovery and Initialization
 %%% Time parameters assuming uniform time steps
-t = time.t;         % Full time vector.
-n = time.nSteps;         % Total number of time points.
+t = simResults.adcSim.t;         % Full time vector.
+n = simResults.adcSim.nSteps;         % Total number of time points.
 dt = t(2) - t(1);   % Simulation (integration) time step.
 
 %%% Desired states (Setpoint)
@@ -46,7 +45,7 @@ qd = repmat(simParameters.setPoint.qd',n, 1)';    % Desired quaternion.
 wd = repmat(simParameters.setPoint.Wd',n, 1)';    % Desired angular velocity.
 
 %%% Disturbances and Inertia
-Td = disturbances; % External disturbance torque.
+Td = simResults.disturbances.torque.total; % External disturbance torque.
 I = simParameters.spacecraft.I; % CubeSat's inertia matrix.
 
 %%% Error flag

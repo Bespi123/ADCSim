@@ -9,10 +9,10 @@ function parameters = simulation_Parameters(~)
     parameters.sim.t0    = 0;
     parameters.sim.tf    = 30;
     parameters.sim.step  = 1E-4;
-    parameters.sim.t  = parameters.sim.t0:parameters.sim.step:parameters.sim.tf;
+    %parameters.sim.t  = parameters.sim.t0:parameters.sim.step:parameters.sim.tf;
     
     % Simulation length
-    parameters.sim.nSteps = length(parameters.sim.t);
+    %parameters.sim.nSteps = length(parameters.sim.t);
 
     % --- CubeSat Physical Parameters ---
     % Inertia tensor of the CubeSat [kg*m^2]. This represents the distribution of mass
@@ -255,11 +255,11 @@ function parameters = simulation_Parameters(~)
     % Flag to enable (2) or disable (1) disturbances obtained usding Orekit [Nm].
     parameters.disturbances.model_propagator.enable = 1;
 
-    % Array to store torques
-    parameters.disturbances.torque.total          = zeros(3, parameters.sim.nSteps); % Total torque [Nm]
-    parameters.disturbances.torque.gravity_torque = zeros(3, parameters.sim.nSteps); % Grav gradient torque [Nm]
-    parameters.disturbances.torque.drag_torque    = zeros(3, parameters.sim.nSteps); % drag torque [Nm]
-    parameters.disturbances.torque.solar_torque   = zeros(3, parameters.sim.nSteps); % Solar rad torque [Nm]
+    %% Array to store torques
+    %parameters.disturbances.torque.total          = zeros(3, parameters.sim.nSteps); % Total torque [Nm]
+    %parameters.disturbances.torque.gravity_torque = zeros(3, parameters.sim.nSteps); % Grav gradient torque [Nm]
+    %parameters.disturbances.torque.drag_torque    = zeros(3, parameters.sim.nSteps); % drag torque [Nm]
+    %parameters.disturbances.torque.solar_torque   = zeros(3, parameters.sim.nSteps); % Solar rad torque [Nm]
    
     % --- Reaction Wheels (Actuators) Configuration ---
     % Number of reaction wheels in the assembly.
