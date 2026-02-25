@@ -1,5 +1,4 @@
-%function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag] = simulation_rk4(~,disturbances,simParameters,time)
-function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag] = simulation_rk4(~,simParameters, simResults)
+function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag] = simulation_rk4(simParameters, simResults, enable_gui)
 %SIMULATION_RK4 Simulates CubeSat attitude dynamics with multi-rate sampling.
 %
 % This function simulates the attitude dynamics of a CubeSat using a Runge-Kutta 4
@@ -32,6 +31,11 @@ function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag]
 
 %%% Import adsim utilities
 import adcsim.utils.*
+
+%%% Check if wait bar is available
+if nargin < 3
+    enable_gui = true;
+end
 
 %% 1. Parameter Recovery and Initialization
 %%% Time parameters assuming uniform time steps
@@ -157,7 +161,10 @@ end
 % The derivative of the desired angular velocity is pre-calculated to avoid doing it inside the loop.
 Wd_dot = diff(wd')'./diff(t);
 % Initialize the progress bar for user feedback.
-hWaitbar = waitbar(0, 'Progress: 0%','Name', 'Attitude simulation progress..');
+hWaitbar = []; % Inicializar vacío por seguridad
+if enable_gui
+    hWaitbar = waitbar(0, 'Progress: 0%','Name', 'Attitude simulation progress..');
+end
 
 %% 5. Main Simulation Loop
 for i = 1:n-1
@@ -171,7 +178,7 @@ for i = 1:n-1
     % The measurement (raw or held from the previous step) is saved to the history.
     omega_meas(:, i) = current_omega_meas;
     omega_meas_filtered(:,i) = filtered_omega_meas;
-    
+
     %% 5.2. AHRS - Attitude and Heading Reference System
     if simParameters.ahrs.enable
         if strcmp(simParameters.ahrs.flag, 'EKF')
@@ -179,7 +186,7 @@ for i = 1:n-1
             % The prediction step runs at each time step 'dt' using the
             % most recent (potentially held) gyroscope measurement.
             myEKF.predict(filtered_omega_meas);
-            
+
             %%% --- EKF Correction Step (runs only when new attitude measurements are available) ---
             if mod(i-1, steps_attitude) == 0
                 % Generate new attitude sensor measurements from the true state.
@@ -197,7 +204,7 @@ for i = 1:n-1
             end
             % Save the updated state estimate.
             x_est(:, i + 1) = myEKF.x_est';
-    
+
         elseif strcmp(simParameters.ahrs.flag, 'MADGWICK')
             %% Madgwick Algorithm
             myMadwick = myMadwick.Predict(filtered_omega_meas);
@@ -217,7 +224,7 @@ for i = 1:n-1
             % Save the updated state estimate.
             x_est(1:4, i + 1) = myMadwick.x_est;
             x_est(5:7, i + 1) = myMadwick.gyro_bias;
-        
+
         elseif strcmp(simParameters.ahrs.flag, 'MAHONY')
             myMahony = myMahony.Predict(filtered_omega_meas);
             % Correction step runs only when new attitude measurements are available.
@@ -289,7 +296,7 @@ for i = 1:n-1
             % Save the updated state estimate.
             x_est(1:4, i + 1) = myCKF.x_est;
             x_est(5:7, i + 1) = myCKF.gyro_bias; 
-            
+
         else
             %% Unscented Kalman Filter (UKF)
             myUKF.Predict(filtered_omega_meas);
@@ -324,10 +331,10 @@ for i = 1:n-1
             % Use ideal (true) signals as feedback for baseline comparison.
             feed_est = x(:, i);
         end
-        
+
         % Calculate the error quaternion.
         dq(:, i) = Error_quaternio(qd(:, i), feed_est(1:4));
-        
+
         % Measure the computation time of the control law.
         tic
         if simParameters.controller.selector == 1
@@ -340,7 +347,7 @@ for i = 1:n-1
             u_new = adcsim.controllers.Boskovic_control(feed_est(5:7), wd(:, i), dq(:, i), delta, k, Umax);
         end
         o(i) = toc; % Log computation time.
-        
+
         % --- Torque Allocator ---
         % Distributes the desired 3-axis torque `u_new` among the available reaction wheels.
         if number_of_rw == 3
@@ -351,7 +358,7 @@ for i = 1:n-1
             T_w_L2norm = allocator_L2norm(W, u_new); % Pseudoinverse (minimum energy)
             T_winf_new = allocator_LinfNorm(T_w_L2norm); % Another allocation strategy
         end
-        
+
         % --- Update last known values for Zero-Order Hold (ZOH) ---
         last_u = u_new;
         last_T_winf_nosat = T_winf_new;
@@ -362,7 +369,7 @@ for i = 1:n-1
         % If it's not a control step, do not compute a new command. The previous command is held.
         o(i) = NaN; % No control computation cost for this step.
     end
-    
+
     % Log the control signal for every simulation step.
     % This will result in a piecewise constant signal due to the ZOH.
     u(:, i + 1) = last_u;
@@ -375,15 +382,15 @@ for i = 1:n-1
     x_rw(:, i + 1) = reactionWheels.States(:);     % Log RW states (speed, current)
     u_rw(:, i + 1) = reactionWheels.voltage_vector(:); % Log applied voltage
     torque_real(:,i) = torque_real_vector';      % Log actual produced torque
-    
+
     % Calculate the total torque from the actuators projected onto the satellite body axes.
     T_u  = W*torque_real(:,i);
-    
+
     %% Satellite Dynamics
     % Integrate the satellite's dynamics forward by one time step `dt`.
     mySatellite = mySatellite.updateState(T_u, Td(:, i), dt);
     x(:, i + 1) = mySatellite.State; % Log the new true state.
-    
+
     % Check if the simulation has become unstable (produced a NaN).
     if isnan(x(:, i + 1))
         error_flag = 1;
@@ -391,7 +398,7 @@ for i = 1:n-1
     end
 
     %% Progress bar update
-    if mod(i, round(n / 10)) == 0
+    if enable_gui && mod(i, round(n / 5)) == 0
         progress = i / (n - 1);
         if isa(hWaitbar, 'handle') && isvalid(hWaitbar)
             waitbar(progress, hWaitbar, sprintf('Progress: %.1f%%', progress * 100));
@@ -413,22 +420,25 @@ actuators.w_cmd = w_cmd;
 actuators.x_rw  = x_rw;
 actuators.torque_real = torque_real;
 actuators.u_rw  = u_rw;
-close(hWaitbar);
 
+% --- Close waitbar
+if enable_gui && isa(hWaitbar, 'handle')
+    close(hWaitbar);
+end
 %% 6. Update performance indices
 % Calculate performance indicators if no error occurred during the simulation.
 if error_flag == 0
     % Convert error quaternion to angle-axis representation to get the pointing error angle.
     ang_and_axis = quat2axang(dq_array'); 
     eulerang = ang_and_axis(:,4); % The 4th element is the angle of rotation.
-    
+
     % Integral of the angle error (IAE).
     indicators.eulerInt = cumtrapz(t(1:end-1),eulerang); 
-    
+
     % Accumulated squared control torque (approximates control effort).
     ascct_dot=vecnorm(u,2,1).^2;
     indicators.ascct = cumtrapz(t,ascct_dot); 
-    
+
     % Settling time calculation.
     tol = 5/100*(180/pi*quat2eul(simParameters.setPoint.qd')); % 5% tolerance
     euler_angles_deg = 180/pi*quat2eul(dq_array');
@@ -438,7 +448,7 @@ if error_flag == 0
 
     % Fill missing computation times.
     indicators.o = fillmissing(o, 'previous');
-    
+
     % Root Mean Square Error (RMSE) of the attitude estimation.
     if simParameters.ahrs.enable
         ang_and_axis_real = quat2axang(x(1:4,:)');

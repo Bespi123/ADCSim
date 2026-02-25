@@ -225,9 +225,9 @@ function parameters = simulation_Parameters(~)
     
     % --- Feedback Controller (PD) Parameters ---
     % Derivative gain matrix (acts on angular velocity error).
-    parameters.controller.feedback.Keye = 0.2 * eye(3);
+    parameters.controller.feedback.Keye = diag([2.3528, 1.2156, 0.7000]);
     % Proportional gain matrix (acts on quaternion error).
-    parameters.controller.feedback.Peye = 0.3 * eye(3);
+    parameters.controller.feedback.Peye = diag([1.2824, 0.1176, 0.3039]);
     
     % --- Boskovic Adaptive Controller Parameters ---
     parameters.controller.boskController.delta = 0.5;
@@ -328,5 +328,11 @@ function parameters = simulation_Parameters(~)
     parameters.integrator.minStep       = 0.001;  % s
     parameters.integrator.maxStep       = 1000;   % s
     parameters.integrator.posTolerance  = 1.0;    % m
+    
+    % --- GA controller Settings ---
+    parameters.ga.controller.popultaionSize = 10;
+    parameters.ga.controller.generations    = 20;
+    parameters.ga.controller.tolerance      = 1e-4;
+    parameters.ga.controller.ref_ts         = 5;
 
 end
