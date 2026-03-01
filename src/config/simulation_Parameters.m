@@ -7,7 +7,7 @@ function parameters = simulation_Parameters(~)
 
     % --- Simulation Parametets ---
     parameters.sim.t0    = 0;
-    parameters.sim.tf    = 30;
+    parameters.sim.tf    = 10;
     parameters.sim.step  = 1E-4;
     %parameters.sim.t  = parameters.sim.t0:parameters.sim.step:parameters.sim.tf;
     
@@ -21,7 +21,6 @@ function parameters = simulation_Parameters(~)
     parameters.spacecraft.I = 1E-3 * [8.460 0.082 -0.054;
                                       0.082 8.46 0.016;
                                      -0.054 0.016 8.46];
-
 
     % Initial attitude quaternion [w, x, y, z]' (scalar-first format). 
     % Represents the initial orientation of the CubeSat relative to the inertial frame.
@@ -225,9 +224,9 @@ function parameters = simulation_Parameters(~)
     
     % --- Feedback Controller (PD) Parameters ---
     % Derivative gain matrix (acts on angular velocity error).
-    parameters.controller.feedback.Keye = diag([2.3528, 1.2156, 0.7000]);
+    parameters.controller.feedback.Keye = diag([2.1028, 1.9656, 1.2]);
     % Proportional gain matrix (acts on quaternion error).
-    parameters.controller.feedback.Peye = diag([1.2824, 0.1176, 0.3039]);
+    parameters.controller.feedback.Peye = diag([0.2824, 0.3676, 0.3039]);
     
     % --- Boskovic Adaptive Controller Parameters ---
     parameters.controller.boskController.delta = 0.5;
