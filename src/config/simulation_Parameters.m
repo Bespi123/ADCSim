@@ -253,6 +253,17 @@ function parameters = simulation_Parameters(~)
 
     % Flag to enable (2) or disable (1) disturbances obtained usding Orekit [Nm].
     parameters.disturbances.model_propagator.enable = 1;
+    
+    % --- Mask parameters ---
+    parameters.disturbances.mask.t = parameters.sim.t0:parameters.sim.step:parameters.sim.tf;
+    parameters.disturbances.mask.Ts = parameters.disturbances.mask.t(2)-parameters.disturbances.mask.t(1);
+    parameters.disturbances.mask.nSteps = parameters.sim.step;
+    parameters.disturbances.mask.widhtWindow = parameters.sim.tf - parameters.sim.t0;
+    parameters.disturbances.mask.t_ini = parameters.sim.t0;
+    parameters.disturbances.mask.t_end = parameters.sim.tf;
+    
+    % Simulation length
+    %parameters.sim.nSteps = length(parameters.sim.t);
 
     %% Array to store torques
     %parameters.disturbances.torque.total          = zeros(3, parameters.sim.nSteps); % Total torque [Nm]

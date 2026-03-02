@@ -24,6 +24,7 @@ function res = initialize_Results(params)
     % Placeholder for Orekit high-fidelity orbital propagation results.
     res.orbital_propagation = [];
 
+
     % --- Simulation Results (Core States) ---
     % x: [q0; q1; q2; q3; w_x; w_y; w_z] -> 7-state vector (Quaternion + Body Rates)
     res.adcSim.x          = zeros(7, n); 
@@ -66,5 +67,12 @@ function res = initialize_Results(params)
     res.disturbances.torque.drag_torque    = zeros(3, n);
     res.disturbances.torque.solar_torque   = zeros(3, n);
     res.disturbances.torque.t              = t_vector;
-   
+
+    % --- Mask parameters ---
+    res.disturbances.mask.t = t_vector;
+    res.disturbances.mask.Ts = dt;
+    res.disturbances.mask.nSteps = res.adcSim.nSteps;
+    res.disturbances.mask.widhtWindow = tf-t0;
+    res.disturbances.mask.t_ini = t0;
+    res.disturbances.mask.t_end = tf;
 end
