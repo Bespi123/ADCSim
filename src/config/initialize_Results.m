@@ -69,10 +69,6 @@ function res = initialize_Results(params)
     res.disturbances.torque.t              = t_vector;
 
     % --- Mask parameters ---
-    res.disturbances.mask.t = t_vector;
-    res.disturbances.mask.Ts = dt;
-    res.disturbances.mask.nSteps = res.adcSim.nSteps;
-    res.disturbances.mask.widhtWindow = tf-t0;
-    res.disturbances.mask.t_ini = t0;
-    res.disturbances.mask.t_end = tf;
+    res.disturbances.mask.t_dense       = zeros(1, n);
+    res.disturbances.mask.torque_dense  = zeros(3, n);
 end

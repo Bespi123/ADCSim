@@ -49,7 +49,11 @@ qd = repmat(simParameters.setPoint.qd',n, 1)';    % Desired quaternion.
 wd = repmat(simParameters.setPoint.Wd',n, 1)';    % Desired angular velocity.
 
 %%% Disturbances and Inertia
-Td = simResults.disturbances.torque.total; % External disturbance torque.
+if simParameters.disturbances.model_propagator.enable == 1
+    Td = simResults.disturbances.torque.total; % External disturbance torque.
+else
+    Td = simResults.disturbances.mask.torque_dense; % Environmental disturbance torque.
+end
 I = simParameters.spacecraft.I; % CubeSat's inertia matrix.
 
 %%% Error flag

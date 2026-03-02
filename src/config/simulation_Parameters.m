@@ -257,7 +257,7 @@ function parameters = simulation_Parameters(~)
     % --- Mask parameters ---
     parameters.disturbances.mask.t = parameters.sim.t0:parameters.sim.step:parameters.sim.tf;
     parameters.disturbances.mask.Ts = parameters.disturbances.mask.t(2)-parameters.disturbances.mask.t(1);
-    parameters.disturbances.mask.nSteps = parameters.sim.step;
+    parameters.disturbances.mask.nSteps = numel(parameters.disturbances.mask.t);
     parameters.disturbances.mask.widhtWindow = parameters.sim.tf - parameters.sim.t0;
     parameters.disturbances.mask.t_ini = parameters.sim.t0;
     parameters.disturbances.mask.t_end = parameters.sim.tf;
