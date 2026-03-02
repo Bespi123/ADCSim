@@ -66,9 +66,12 @@ function res = initialize_Results(params)
     res.disturbances.torque.gravity_torque = zeros(3, n);
     res.disturbances.torque.drag_torque    = zeros(3, n);
     res.disturbances.torque.solar_torque   = zeros(3, n);
+    res.disturbances.torque.magnetic_field   = zeros(3, n);
     res.disturbances.torque.t              = t_vector;
 
     % --- Mask parameters ---
-    res.disturbances.mask.t_dense       = zeros(1, n);
-    res.disturbances.mask.torque_dense  = zeros(3, n);
+    res.disturbances.mask.t_dense         = zeros(1, n);
+    res.disturbances.mask.torque_dense    = zeros(3, n);
+    res.disturbances.mask.magnetic_field  = zeros(3, n);
+
 end
