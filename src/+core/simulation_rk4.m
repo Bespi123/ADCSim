@@ -389,11 +389,15 @@ try
         torque_real(:,i) = torque_real_vector';      % Log actual produced torque
     
         % Calculate the total torque from the actuators projected onto the satellite body axes.
-        T_u  = W*torque_real(:,i);
-    
+        T_u  = -1*W*torque_real(:,i); % -1 due to it is an intrinsical torque
+        
+        % Reaction wheels angular momentum (assuming omega_rw_rads>>w_body)
+        omega_rw_rads = x_rw(1:2:end, i + 1);
+        hw  = W * (motor.Jrw * omega_rw_rads);
+
         %% Satellite Dynamics
         % Integrate the satellite's dynamics forward by one time step `dt`.
-        mySatellite = mySatellite.updateState(T_u, Td(:, i), dt);
+        mySatellite = mySatellite.updateState(Td(:, i), hw,  T_u, dt);
         x(:, i + 1) = mySatellite.State; % Log the new true state.
     
         % Check if the simulation has become unstable (produced a NaN).
