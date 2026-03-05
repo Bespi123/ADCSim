@@ -295,9 +295,14 @@ function parameters = simulation_Parameters(~)
     parameters.rw.motor.ke   = 0.0254;   % Back-EMF (voltage) constant [Vs/rad].
     
     % --- Reaction Wheel DC motor initial conditions ---
-    parameters.rw.motor.init.w_rw = 0;      % Initial wheel speed [rad/s].
+    parameters.rw.motor.init.w_rw = 0;    % Initial wheel speed [rad/s].
     parameters.rw.motor.init.current = 0; % Initial motor current [A].
     
+    % --- Reaction Wheel DC motor limits ---
+    parameters.rw.motor.max_voltage = 12;        % Nominal rw voltage [v] 
+    parameters.rw.motor.max_speed = 15000*pi/30; % rw max angular rate [rad/s]
+    parameters.rw.motor.max_current = 0.5;       % rw max current [A93
+
     % --- Reaction Wheel PID Speed Controller Gains ---
     % This internal PID controller's job is to ensure the wheel's actual speed
     % matches the commanded speed from the ADCS control law.

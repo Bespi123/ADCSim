@@ -397,7 +397,7 @@ try
 
         %% Satellite Dynamics
         % Integrate the satellite's dynamics forward by one time step `dt`.
-        mySatellite = mySatellite.updateState(Td(:, i), hw,  T_u, dt);
+        mySatellite = mySatellite.updateState(Td(:, i), hw,T_u, dt);
         x(:, i + 1) = mySatellite.State; % Log the new true state.
     
         % Check if the simulation has become unstable (produced a NaN).
