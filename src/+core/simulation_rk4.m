@@ -8,7 +8,7 @@ function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag]
 %
 % Author: bespi123
 % Creation Date: 2023-10-27
-% Last Modified: 2026-02-24
+% Last Modified: 2026-03-05
 %
 % Inputs:
 %   ~             - Placeholder for the UI application object, unused here.
@@ -40,7 +40,7 @@ end
 %% 1. Parameter Recovery and Initialization
 %%% Time parameters assuming uniform time steps
 t = simResults.adcSim.t;         % Full time vector.
-n = simResults.adcSim.nSteps;         % Total number of time points.
+n = simResults.adcSim.nSteps;    % Total number of time points.
 dt = t(2) - t(1);   % Simulation (integration) time step.
 
 %%% Desired states (Setpoint)
@@ -48,13 +48,17 @@ dt = t(2) - t(1);   % Simulation (integration) time step.
 qd = repmat(simParameters.setPoint.qd',n, 1)';    % Desired quaternion.
 wd = repmat(simParameters.setPoint.Wd',n, 1)';    % Desired angular velocity.
 
-%%% Disturbances and Inertia
+%%% Disturbances and magnetic field
 if simParameters.disturbances.model_propagator.enable == 1
     Td = simResults.disturbances.torque.total; % External disturbance torque.
+    B_LVLH = repmat(simParameters.sensors.mag.m_I, 1, n); % Earth magnetic field static fallback
 else
     Td = simResults.disturbances.mask.torque_dense; % Environmental disturbance torque.
+    B_LVLH = simResults.disturbances.mask.magnetic_field; % Earth magnetic field from IGRF14
 end
-I = simParameters.spacecraft.I; % CubeSat's inertia matrix.
+
+% CubeSat's inertia matrix.
+I = simParameters.spacecraft.I; 
 
 %%% Error flag
 error_flag = 0; % Initialized to 0 (no error).
@@ -101,6 +105,14 @@ end
 number_of_rw = simParameters.rw.number; % Number of reaction wheels.
 W  = simParameters.rw.W;                % Configuration matrix of the wheels.
 motor = simParameters.rw.motor;         % DC motor model parameters.
+%%% Actuator parameters (Magnetorquers)
+if isfield(simParameters, 'mtq')
+    number_of_mtq = simParameters.mtq.number;
+    k_dump = simParameters.mtq.k_dump;
+else
+    number_of_mtq = 0;
+end
+
 
 %% 2. Simulation containers
 % Pre-allocate memory with NaN for all variables to be logged.
@@ -112,8 +124,11 @@ x_est = NaN(7,n-1); y_est = NaN(6+3*number_of_stars,n-3);
 o = NaN(1,n-1); 
 x_rw = NaN(2*number_of_rw,n);
 u_rw = NaN(number_of_rw,n);
-w_cmd = NaN(number_of_rw,n);
-torque_real = NaN(number_of_rw,n);
+w_rw_cmd = NaN(number_of_rw,n);
+torque_rw_real = NaN(number_of_rw,n);
+u_mtq_cmd = NaN(number_of_mtq, n);
+torque_mag = NaN(3, n);
+current_mtq = NaN(number_of_mtq, n);
 
 %% 3. Initial conditions
 % Set initial true state, control, and estimated state
@@ -127,10 +142,15 @@ w_cmd_ant = zeros(number_of_rw,1);
 % Initialize containers for the last known measurement/calculation (for Zero-Order Hold).
 last_u = zeros(number_of_rw,1);
 last_T_winf_nosat = zeros(number_of_rw, 1);
+last_m_cmd = zeros(number_of_mtq, 1);
 
 % Initialize simulation objects from custom classes.
 mySatellite = adcsim.satellite.Satellite(simParameters.initialValues, I);
 reactionWheels = adcsim.actuators.ReactionWheelAssembly(simParameters.rw);
+if simParameters.mtq.enable == 1
+    myMagnetorquers = adcsim.actuators.MagnetorquerAssembly(simParameters.mtq);
+end
+
 if (simParameters.sensors_selector.imu.flag)
     myIMU =  adcsim.sensors.IMU(simParameters.sensors);
 else
@@ -152,10 +172,13 @@ R_init = quat2rot(x(1:4, 1));
 
 % Simulate an initial sensor reading to initialize the attitude estimator.
 g_B(:,1) = myIMU.getAccelerometerReading(R_init); 
-m_B(:,1) = myIMU.getMagnetometerReading(R_init); 
+m_B(:,1) = myIMU.getMagnetometerReading(R_init, B_LVLH(:,1)); 
+
+% Hold variable for magnetometer (avoids NaNs in control loop)
+last_m_B = m_B(:,1);
 
 % Initialize the EKF using the TRIAD method with the first measurements.
-myEKF.initializeWithTriad(g_B(:,1), m_B(:,1));
+myEKF.initializeWithTriad(g_B(:,1), m_B(:,1), B_LVLH(:,1));
 
 if simParameters.sensors.star.enable == 1
     stars_B(:,1) = myStarSensor.getReading(R_init);
@@ -197,7 +220,7 @@ try
                     % Generate new attitude sensor measurements from the true state.
                     R = quat2rot(x(1:4, i));
                     g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R);
+                    m_B(:,i) = myIMU.getMagnetometerReading(R,B_LVLH(:,i));
                     if simParameters.sensors.star.enable == 1 
                         stars_B(:,i)  = myStarSensor.getReading(R);
                         y = [g_B(:,i); m_B(:,i); stars_B(:,i)]; % Measurement vector
@@ -205,7 +228,7 @@ try
                         y = [g_B(:,i); m_B(:,i)];
                     end
                     % Perform the EKF correction step with the new measurements.
-                    myEKF.correct(y); 
+                    myEKF.correct(y, B_LVLH(:, i)); 
                 end
                 % Save the updated state estimate.
                 x_est(:, i + 1) = myEKF.x_est';
@@ -217,7 +240,7 @@ try
                 if mod(i-1, steps_attitude) == 0
                     R = quat2rot(x(1:4, i));
                     g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R);
+                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
                     if simParameters.sensors.star.enable == 1 
                         stars_B(:,i)  = myStarSensor.getReading(R);
                         y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
@@ -236,7 +259,7 @@ try
                 if mod(i-1, steps_attitude) == 0
                     R = quat2rot(x(1:4, i));
                     g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R);
+                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
                     if simParameters.sensors.star.enable == 1 
                         stars_B(:,i)  = myStarSensor.getReading(R);
                         y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
@@ -253,7 +276,7 @@ try
                  if mod(i-1, steps_attitude) == 0
                     R = quat2rot(x(1:4, i));
                     g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R);
+                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
                     if simParameters.sensors.star.enable == 1 
                         stars_B(:,i)  = myStarSensor.getReading(R);
                         y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
@@ -271,7 +294,7 @@ try
                 if mod(i-1, steps_attitude) == 0
                     R = quat2rot(x(1:4, i));
                     g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R);
+                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
                     if simParameters.sensors.star.enable == 1 
                         stars_B(:,i)  = myStarSensor.getReading(R);
                         y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
@@ -289,7 +312,7 @@ try
                 if mod(i-1, steps_attitude) == 0
                     R = quat2rot(x(1:4, i));
                     g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R);
+                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
                     if simParameters.sensors.star.enable == 1 
                         stars_B(:,i)  = myStarSensor.getReading(R);
                         y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
@@ -309,7 +332,7 @@ try
                 if mod(i-1, steps_attitude) == 0
                     R = quat2rot(x(1:4, i));
                     g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R);
+                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
                     if simParameters.sensors.star.enable == 1 
                         stars_B(:,i)  = myStarSensor.getReading(R);
                         y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
@@ -369,6 +392,25 @@ try
             last_T_winf_nosat = T_winf_new;
             % --- Calculate commanded angular rate for each reaction wheel ---
             last_w_rw_cmd = w_cmd_ant + (last_T_winf_nosat / motor.Jrw) * Ts_control;
+
+            % --- Momentum Dumping (Desaturation Algorithm)
+            if simParameters.mtq.enable == 1
+                % Estimate current RW momentum
+                omega_rw_est = x_rw(1:2:end, i); 
+                hw_est = W * (motor.Jrw * omega_rw_est);
+                
+                % Cross-Product Law using the last known valid B-field
+                b_mag_sq = norm(last_m_B)^2;
+                
+                if b_mag_sq > 1e-18 
+                    m_cmd_body = (k_dump / b_mag_sq) * cross(last_m_B, hw_est);
+                    % Distribute command to coils using pseudo-inverse
+                    last_m_cmd = pinv(simParameters.mtq.W) * m_cmd_body;
+                else
+                    last_m_cmd = zeros(number_of_mtq, 1);
+                end
+            end
+
         else
             % --- Hold previous control command (ZOH) ---
             % If it's not a control step, do not compute a new command. The previous command is held.
@@ -379,25 +421,36 @@ try
         % This will result in a piecewise constant signal due to the ZOH.
         u(:, i + 1) = last_u;
         T_winf_nosat(:, i + 1) = last_T_winf_nosat;
-        w_cmd(:, i) = last_w_rw_cmd;
+        w_rw_cmd(:, i) = last_w_rw_cmd;
     
         %% Actuator model
         % Updates the reaction wheels' state based on the command and returns the actual torque produced.
-        [reactionWheels, torque_real_vector] = reactionWheels.update(w_cmd(:, i), dt);
+        [reactionWheels, torque_real_vector] = reactionWheels.update(w_rw_cmd(:, i), dt);
         x_rw(:, i + 1) = reactionWheels.States(:);     % Log RW states (speed, current)
         u_rw(:, i + 1) = reactionWheels.voltage_vector(:); % Log applied voltage
-        torque_real(:,i) = torque_real_vector';      % Log actual produced torque
+        torque_rw_real(:,i) = torque_real_vector';      % Log actual produced torque
     
         % Calculate the total torque from the actuators projected onto the satellite body axes.
-        T_u  = -1*W*torque_real(:,i); % -1 due to it is an intrinsical torque
+        T_u  = -1*W*torque_rw_real(:,i); % -1 due to it is an intrinsical torque
         
         % Reaction wheels angular momentum (assuming omega_rw_rads>>w_body)
         omega_rw_rads = x_rw(1:2:end, i + 1);
         hw  = W * (motor.Jrw * omega_rw_rads);
 
+        if simParameters.mtq.enable == 1
+            % Pass the last valid B-field for calculating realistic torque
+            [myMagnetorquers, t_mag_real, i_mtq_real] = myMagnetorquers.update(last_m_cmd, last_m_B);
+            
+            u_mtq_cmd(:, i+1) = last_m_cmd;
+            torque_mag(:, i) = t_mag_real;
+            current_mtq(:, i+1) = i_mtq_real;
+        else
+            t_mag_real = zeros(3,1);
+        end
+
         %% Satellite Dynamics
         % Integrate the satellite's dynamics forward by one time step `dt`.
-        mySatellite = mySatellite.updateState(Td(:, i), hw,T_u, dt);
+        mySatellite = mySatellite.updateState(Td(:, i) + t_mag_real, hw, T_u, dt);
         x(:, i + 1) = mySatellite.State; % Log the new true state.
     
         % Check if the simulation has become unstable (produced a NaN).
@@ -414,7 +467,7 @@ try
             end
         end
         % Update the "previous" commanded wheel speed for the next iteration's calculation.
-        w_cmd_ant = w_cmd(:,i);
+        w_cmd_ant = w_rw_cmd(:,i);
     end
     
     % --- Package sensor data for output ---
@@ -425,11 +478,17 @@ try
     sensors.omega_filtered = omega_meas_filtered;
     
     % --- Package actuator data for output ---
-    actuators.w_cmd = w_cmd;
+    actuators.w_cmd = w_rw_cmd;
     actuators.x_rw  = x_rw;
-    actuators.torque_real = torque_real;
+    actuators.torque_real = torque_rw_real;
     actuators.u_rw  = u_rw;
     
+    if simParameters.mtq.enable
+        actuators.u_mtq_cmd = u_mtq_cmd;
+        actuators.torque_mag = torque_mag;
+        actuators.current_mtq = current_mtq;
+    end
+
     % --- Close waitbar
     if enable_gui && isa(hWaitbar, 'handle')
         close(hWaitbar);
@@ -492,6 +551,6 @@ catch ME
     
     % Empaquetar las variables de salida obligatorias para evitar el error "Output argument not assigned"
     sensors = struct('meas', [], 'est', [], 'omega_filtered', []);
-    actuators = struct('w_cmd', w_cmd, 'x_rw', x_rw, 'torque_real', torque_real, 'u_rw', u_rw);
+    actuators = struct('w_cmd', w_rw_cmd, 'x_rw', x_rw, 'torque_real', torque_rw_real, 'u_rw', u_rw);
 end
 end

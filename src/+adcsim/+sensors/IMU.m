@@ -5,6 +5,8 @@ classdef IMU < handle
     %   noise and bias to the true values.
     %   Date          Author          Notes
     %   08/20/2025    Bespi123        Create simple IMU model
+    %   [Current Date] Bespi123       Updated Mag for dynamic IGRF and Magnetorquers
+    
     %% Public Properties
     properties
         Gyroscope       struct  % Contains gyroscope parameters (std, bias, filter state).
@@ -44,7 +46,6 @@ classdef IMU < handle
                 'std', sensors.mag.std, ...
                 'bias', sensors.mag.bias ...
             );
-
             % Store the inertial frame reference vectors.
             obj.g_I = sensors.acc.g_I;
             obj.m_I = sensors.mag.m_I;
@@ -58,11 +59,10 @@ classdef IMU < handle
             %       omega - 3x1 true angular velocity vector (rad/s).
             %   Outputs:
             %       reading - 3x1 simulated gyroscope measurement.
-
             noise = obj.Gyroscope.std .* randn(3, 1);
             reading = omega + noise + obj.Gyroscope.bias;
         end
-
+        
         function reading_filtered = filterGyroscopeReading(obj, gyro_reading)       
             %filterGyroscopeReading Applies a low-pass filter to the gyro measurement.
             %   This simulates the smoothing effect often present in real sensor hardware
@@ -92,7 +92,6 @@ classdef IMU < handle
             %       R - 3x3 rotation matrix from body to inertial frame.
             %   Outputs:
             %       reading - 3x1 simulated (and normalized) accelerometer measurement.
-
             noise = obj.Accelerometer.std .* randn(3, 1);
             
             % Rotate gravity vector from inertial to body frame (R') and add imperfections.
@@ -102,23 +101,32 @@ classdef IMU < handle
             reading = reading / norm(reading);
         end
         
-        function reading = getMagnetometerReading(obj, R)
+        function reading = getMagnetometerReading(obj, R, current_m_I)
             %getMagnetometerReading Simulates a magnetometer measurement.
             %   Rotates the inertial magnetic vector into the body frame, adds noise
-            %   and bias, and then normalizes the result.
+            %   and bias.
             %
             %   Inputs:
-            %       R - 3x3 rotation matrix from body to inertial frame.
+            %       R           - 3x3 rotation matrix from body to inertial frame.
+            %       current_m_I - (Optional) 3x1 time-varying magnetic vector in 
+            %                     the inertial frame (e.g., from IGRF model). 
+            %                     Defaults to obj.m_I if not provided.
             %   Outputs:
-            %       reading - 3x1 simulated (and normalized) magnetometer measurement.
-
+            %       reading - 3x1 simulated magnetometer measurement [Teslas/Gauss].
+            
+            % Use dynamic magnetic field if provided, else use static reference
+            if nargin < 3
+                current_m_I = obj.m_I;
+            end
+            
             noise = obj.Magnetometer.std .* randn(3, 1);
             
             % Rotate magnetic vector from inertial to body frame (R') and add imperfections.
-            reading = R' * obj.m_I + noise + obj.Magnetometer.bias;
+            reading = R' * current_m_I + noise + obj.Magnetometer.bias;
             
-            % Normalize to represent a pure direction vector.
-            reading = reading / norm(reading);
+            % CRITICAL NOTE: Normalization has been removed (reading = reading / norm(reading))
+            % The magnetometer must output the true magnitude (in Teslas or Gauss) 
+            % so the desaturation algorithm (B x h) can calculate the correct dipole moment.
         end
     end
 end

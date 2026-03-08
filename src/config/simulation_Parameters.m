@@ -110,7 +110,9 @@ function parameters = simulation_Parameters(~)
     parameters.sensors_soph.gyro.limit = 2000* (pi/180);
     % ADC Resolution [bits].
     parameters.sensors_soph.gyro.bits = 16;
-    
+    % ADC reference voltage [v].
+    parameters.sensors_soph.gyro.v_ref = 3.3;
+
     %%% Accelerometer (Sophisticated Model)
     parameters.sensors_soph.acc.g_I = parameters.sensors.acc.g_I;
     % Constant bias [m/s^2].
@@ -125,6 +127,8 @@ function parameters = simulation_Parameters(~)
     parameters.sensors_soph.acc.limit = 20;
     % ADC Resolution [bits].
     parameters.sensors_soph.acc.bits = 12;
+    % ADC reference voltage [v].
+    parameters.sensors_soph.acc.v_ref  = 3.3;
 
     %%% Magnetometer (Sophisticated Model)
     parameters.sensors_soph.mag.m_I = parameters.sensors.mag.m_I;
@@ -140,6 +144,8 @@ function parameters = simulation_Parameters(~)
     parameters.sensors_soph.mag.limit = 60e-6;
     % ADC Resolution [bits].
     parameters.sensors_soph.mag.bits = 14;
+    % ADC reference voltage [v].
+    parameters.sensors_soph.mag.v_ref  = 3.3;
 
     % --- AHRS (Attitude and Heading Reference System) Selection ---
     % The AHRS is the algorithm that fuses sensor data to estimate the attitude.
@@ -299,9 +305,9 @@ function parameters = simulation_Parameters(~)
     parameters.rw.motor.init.current = 0; % Initial motor current [A].
     
     % --- Reaction Wheel DC motor limits ---
-    parameters.rw.motor.max_voltage = 12;        % Nominal rw voltage [v] 
+    parameters.rw.motor.max_voltage = 24;        % Nominal rw voltage [v] 
     parameters.rw.motor.max_speed = 15000*pi/30; % rw max angular rate [rad/s]
-    parameters.rw.motor.max_current = 0.5;       % rw max current [A93
+    parameters.rw.motor.max_current = 5;       % rw max current [A]
 
     % --- Reaction Wheel PID Speed Controller Gains ---
     % This internal PID controller's job is to ensure the wheel's actual speed
@@ -310,6 +316,19 @@ function parameters = simulation_Parameters(~)
     parameters.rw.motor.pid.ki = 28.7345189644697;   % Integral gain
     parameters.rw.motor.pid.kd = -0.000554999924740984; % Derivative gain
     parameters.rw.motor.pid.Nu = 289.873462888377;  % Derivative filter coefficient.
+
+    % --- Magnetorquers Parameters ---
+    parameters.mtq.enable      = 1;       % Enable magnetorquers for saturation
+    parameters.mtq.number      = 3;       % Number of magnetorquers
+    parameters.mtq.W           = eye(3);  % Aligned with the X, Y, Z axes of the Body Frame
+    parameters.mtq.max_dipole  = 0.2;     % [Am^2] Maximum magnetic dipole moment
+    parameters.mtq.max_voltage = 5.0;     % [V] Typical EPS bus voltage for actuators
+    parameters.mtq.resistance  = 40.0;    % [Ohms] Internal resistance of the copper coil
+    parameters.mtq.area        = 0.0064;  % [m^2] Coil cross-sectional area (equivalent to an 8x8 cm square)
+    parameters.mtq.turns       = 250;     % [Turns] Number of copper wire turns
+        
+    % --- Desaturation gains ---
+    parameters.mtq.k_dump = 0.5; 
 
     %% Orekit parameters
     % --- Initial Date ---

@@ -101,7 +101,7 @@ classdef AttitudeEKF < handle
             end
         end
         
-        function initializeWithTriad(obj, g_B, m_B)
+        function initializeWithTriad(obj, g_B, m_B, current_m_I)
             %------------------------------------------------------------------
             % initializeWithTriad  Initializes quaternion using TRIAD.
             %
@@ -112,11 +112,21 @@ classdef AttitudeEKF < handle
             % INPUTS:
             %   g_B : measured gravity direction in body frame
             %   m_B : measured magnetic field direction in body frame
+            %   current_m_I: currente magnetic field in the inertial frame
             % OUTPUT:
             %   Updates obj.x_est(1:4) with TRIAD quaternion estimate
             %------------------------------------------------------------------
  
-            q_triad = obj.triad_algorithm(obj.imu.g_I, obj.imu.m_I, g_B, m_B);
+            % Use dynamic magnetic field if provided, else fallback to static
+            if nargin < 4
+                current_m_I = obj.imu.m_I;
+            end
+
+            % Normalize inputs
+            m_B_unit = m_B / norm(m_B);
+            current_m_I_unit = current_m_I / norm(current_m_I);
+            
+            q_triad = obj.triad_algorithm(obj.imu.g_I, current_m_I_unit, g_B, m_B_unit);
             obj.x_est(1:4) = q_triad;
         end
         
@@ -160,7 +170,7 @@ classdef AttitudeEKF < handle
             obj.P_cov = F * obj.P_cov * F' + Qd;
         end
         
-        function correct(obj, y_meas)
+        function correct(obj, y_meas, current_m_I)
             %------------------------------------------------------------------
             % correct  EKF measurement update (correction step).
             %
@@ -176,15 +186,26 @@ classdef AttitudeEKF < handle
             %   y_meas : stacked measurement vector:
             %            [g_B; m_B; (stars_B(:) if enabled)]
             %------------------------------------------------------------------
+            
+            % Use dynamic magnetic field if provided, else fallback to static
+            if nargin < 3
+                current_m_I = obj.imu.m_I;
+            end
+
+            % Normalize the reference vector for mathematical predictions
+            current_m_I_unit = current_m_I / norm(current_m_I);
+            
+            % Normalize the MEASURED magnetic vector (elements 4 to 6 in y_meas)
+            y_meas(4:6) = y_meas(4:6) / norm(y_meas(4:6));
 
             % Calculate the Measurement Jacobian (C)
-            C = obj.computeMeasurementJacobian();
+            C = obj.computeMeasurementJacobian(current_m_I_unit);
             
             % Calculate the Kalman Gain: K = P*C' * (C*P*C' + R)^(-1)
             K_gain = obj.P_cov * C' / (C * obj.P_cov * C' + obj.R);
             
             % Calculate the predicted measurement (h(x))
-            y_pred = obj.predictMeasurement();
+            y_pred = obj.predictMeasurement(current_m_I_unit);
             
             % Correct the state: x_est = x_est + K*(y_meas - y_pred)
             obj.x_est = obj.x_est + K_gain * (y_meas - y_pred);
@@ -203,14 +224,15 @@ classdef AttitudeEKF < handle
     methods (Access = private)
         % Helper methods encapsulated within the class
         
-        function y_pred = predictMeasurement(obj)
+        function y_pred = predictMeasurement(obj, current_m_I_unit)
             % Predicts the sensor measurement based on the current state.
             q_est = obj.x_est(1:4);
             R_pred = obj.quat2rot(q_est); % Rotation matrix from Body to Inertial (C_I^B)
             
             % Predicted measurements for IMU references in the Body frame
             g_B_pred = R_pred' * obj.imu.g_I; % R' is C_B^I
-            m_B_pred = R_pred' * obj.imu.m_I;
+            m_B_pred = R_pred' * current_m_I_unit;
+            %m_B_pred = R_pred' * obj.imu.m_I;
             
             if obj.starTracker.enable
                 % Predicted StarTracker measurements (stars in Body frame)
@@ -222,7 +244,7 @@ classdef AttitudeEKF < handle
             end
         end
         
-        function C = computeMeasurementJacobian(obj)
+        function C = computeMeasurementJacobian(obj, current_m_I_unit)
             % Calculates the Measurement Jacobian C (or H).
             q = obj.x_est(1:4);
             q0=q(1); q1=q(2); q2=q(3); q3=q(4);
@@ -236,7 +258,7 @@ classdef AttitudeEKF < handle
                      gx*q2-gy*q1+gz*q0, gx*q3-gy*q0-gz*q1, gx*q0+gy*q3-gz*q2, gx*q1+gy*q2+gz*q3];
             
             % Jacobian for the magnetometer (derivative of h_m = R' * m_I w.r.t q)
-            m_I = obj.imu.m_I;
+            m_I = current_m_I_unit;
             rx=m_I(1); ry=m_I(2); rz=m_I(3);
             % C_m is a 3x4 matrix
             C_m = 2*[rx*q0+ry*q3-rz*q2, rx*q1+ry*q2+rz*q3, -rx*q2+ry*q1-rz*q0, -rx*q3+ry*q0+rz*q1;
