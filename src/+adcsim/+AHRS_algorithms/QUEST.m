@@ -99,7 +99,7 @@ classdef QUEST
             end
         end
 
-        function obj = Update(obj, Gyroscope, y_meas)
+        function obj = Update(obj, Gyroscope, y_meas, current_m_I)
             %UPDATE Solve Wahba's problem and update quaternion estimate.
             %
             % Inputs:
@@ -123,6 +123,19 @@ classdef QUEST
             %   convert to scalar-first and normalize
 
             %#ok<NASGU>  % Gyroscope currently unused (kept for interface consistency)
+    
+            if nargin < 4
+                current_m_I = obj.imu.m_I; % Use static if dynamic is not provided
+            end
+            
+            % Normalize the magnetic reference vector
+            current_m_I_unit = current_m_I / norm(current_m_I);
+            
+            % Update the second column of y_ref (which corresponds to the magnetometer)
+            % Use safe matrix indexing (:, 2)
+            if size(obj.y_ref, 2) >= 2
+                obj.y_ref(:, 2) = current_m_I_unit;
+            end
 
             b_list = y_meas;   % stacked measurements b_i in BODY frame
             r_list = obj.y_ref; % references r_i in INERTIAL frame

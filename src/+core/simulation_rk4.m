@@ -283,7 +283,7 @@ try
                     else
                         y = [g_B(:,i); m_B(:,i)];
                     end
-                    myQuest = myQuest.Update(filtered_omega_meas, y);
+                    myQuest = myQuest.Update(filtered_omega_meas, y, B_LVLH(:,i));
                 end
                 % Save the updated state estimate.
                x_est(1:4, i + 1) = myQuest.x_est;
