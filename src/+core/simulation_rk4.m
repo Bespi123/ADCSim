@@ -266,7 +266,7 @@ try
                     else
                         y = [g_B(:,i); m_B(:,i)];
                     end
-                    myMahony = myMahony.Update(filtered_omega_meas, y);
+                    myMahony = myMahony.Update(filtered_omega_meas, y, B_LVLH(:,i));
                 end
                 % Save the updated state estimate.
                x_est(1:4, i + 1) = myMahony.x_est;
@@ -301,7 +301,7 @@ try
                     else
                         y = [g_B(:,i); m_B(:,i)];
                     end
-                    myRequest = myRequest.Update(filtered_omega_meas, y);
+                    myRequest = myRequest.Update(filtered_omega_meas, y, B_LVLH(:,i));
                 end
                 % Save the updated state estimate.
                 x_est(1:4, i + 1) = myRequest.x_est;

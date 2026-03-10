@@ -141,7 +141,7 @@ classdef Mahony
             obj.x_est = q / norm(q);
         end
 
-        function obj = Update(obj, Gyroscope, y_meas)
+        function obj = Update(obj, Gyroscope, y_meas, current_m_I)
             %UPDATE Measurement-based correction and bias estimation.
             %
             % This method computes the Mahony attitude error using vector
@@ -165,6 +165,19 @@ classdef Mahony
             %   quaternion kinematics and rotation convention.
 
             import adcsim.utils.*
+
+            if nargin < 4
+                current_m_I = obj.imu.m_I; % Use static if dynamic is not provided
+            end
+            
+            % Normalize the magnetic reference vector
+            current_m_I_unit = current_m_I / norm(current_m_I);
+            
+            % Update the second column of y_ref (which corresponds to the magnetometer)
+            % Use safe matrix indexing (:, 2)
+            if size(obj.y_ref, 2) >= 2
+                obj.y_ref(:, 2) = current_m_I_unit;
+            end
 
             % Accumulate skew-symmetric error matrix
             S = zeros(3,3);

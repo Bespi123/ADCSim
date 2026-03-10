@@ -131,7 +131,7 @@ classdef REQUEST
             obj.x_est = obj.extractQuatFromK(obj.K_acc);
         end
 
-        function obj = Update(obj, Gyroscope, y_meas)
+        function obj = Update(obj, Gyroscope, y_meas, current_m_I)
             %UPDATE Low-rate measurement update using new vector measurements (REQUEST step 5).
             %
             % Inputs:
@@ -146,6 +146,19 @@ classdef REQUEST
             %   - extracts quaternion x_est
 
             %#ok<NASGU> Gyroscope  % not used here if Predict() is called externally
+
+            if nargin < 4
+                current_m_I = obj.imu.m_I; % Use static if dynamic is not provided
+            end
+            
+            % Normalize the magnetic reference vector
+            current_m_I_unit = current_m_I / norm(current_m_I);
+
+            % Update the second column of y_ref (which corresponds to the magnetometer)
+            % Use safe matrix indexing (:, 2)
+            if size(obj.y_ref, 2) >= 2
+                obj.y_ref(:, 2) = current_m_I_unit;
+            end
 
             b_list = y_meas;     % stacked measurements b_i in BODY frame
             r_list = obj.y_ref;  % references r_i in INERTIAL frame
@@ -165,8 +178,8 @@ classdef REQUEST
                 r_i = r_list(:,i);
 
                 % Optional normalization (recommended with real sensors)
-                % nb = norm(b_i); if nb > 0, b_i = b_i/nb; end
-                % nr = norm(r_i); if nr > 0, r_i = r_i/nr; end
+                nb = norm(b_i); if nb > 0, b_i = b_i/nb; end
+                nr = norm(r_i); if nr > 0, r_i = r_i/nr; end
 
                 Bsum = Bsum + a_list(i) * (b_i * r_i');
                 zsum = zsum + a_list(i) * cross(b_i, r_i);
