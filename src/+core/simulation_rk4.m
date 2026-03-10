@@ -247,7 +247,7 @@ try
                     else
                         y = [g_B(:,i); m_B(:,i)];
                     end
-                    myMadwick = myMadwick.Update(filtered_omega_meas, y);
+                    myMadwick = myMadwick.Update(filtered_omega_meas, y, B_LVLH(:,i));
                 end
                 % Save the updated state estimate.
                 x_est(1:4, i + 1) = myMadwick.x_est;

@@ -55,11 +55,20 @@ classdef MadgwickAHRS < handle
             q = q + qDot' * obj.dt;
             obj.x_est = q / norm(q); % Normalize the quaternion
         end
-        function obj = Update(obj, Gyroscope, y_meas)
+
+
+        function obj = Update(obj, Gyroscope, y_meas, current_m_I)
             import adcsim.utils.*
+            if nargin < 4
+                current_m_I = obj.imu.m_I; % Use static if dynamic is not provided
+            end
+
+            % Normalize the magnetic reference vector (not used)
+            current_m_I_unit = current_m_I / norm(current_m_I);
+
             q = obj.x_est; % short name local variable for readability
-            acc = y_meas(1:3);
-            mag = y_meas(4:6);
+            acc = y_meas(1:3)/norm(y_meas(1:3));
+            mag = y_meas(4:6)/norm(y_meas(4:6));
             
             % Reference direction of Earth's magnetic feild
             h = quaternProd(q', quaternProd([0;mag]', quaternConj(q')));

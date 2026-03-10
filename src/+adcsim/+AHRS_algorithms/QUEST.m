@@ -154,11 +154,11 @@ classdef QUEST
                 b_i = b_list(3*(i-1)+1: 3*(i-1)+3);
 
                 %%% Normalize b_i defensively (recommended in real data)
-                %%%b_i = b_i / norm(b_i);
+                b_i = b_i / norm(b_i);
 
                 % Reference vector r_i (often already unit; normalize defensively if needed)
                 r_i = r_list(:,i);
-                %%%r_i = r_i / norm(r_i);
+                r_i = r_i / norm(r_i);
 
                 % Wahba accumulators
                 Bsum = Bsum + a_list(i) * (b_i * r_i');      % Σ a_i b_i r_i^T
