@@ -319,7 +319,7 @@ try
                     else
                         y = [g_B(:,i); m_B(:,i)];
                     end
-                    myCKF.Correct(y);
+                    myCKF.Correct(y, B_LVLH(:,i));
                 end
                 % Save the updated state estimate.
                 x_est(1:4, i + 1) = myCKF.x_est;
@@ -339,7 +339,7 @@ try
                     else
                         y = [g_B(:,i); m_B(:,i)];
                     end
-                    myUKF.Correct(y);
+                    myUKF.Correct(y, B_LVLH(:,i));
                 end
                 % Save the updated state estimate.
                x_est(1:4, i + 1) = myUKF.x_est;

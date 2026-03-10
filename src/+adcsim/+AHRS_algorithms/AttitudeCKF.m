@@ -120,19 +120,27 @@ classdef AttitudeCKF < handle
             obj.P_est = P_pred;
         end
 
-        function Correct(obj, y_meas)
+        function Correct(obj, y_meas, current_m_I)
             %CORRECT  CKF measurement update using vector observations.
             %
             % y_meas stacking:
             %   [acc; mag; stars]  where stars is 3*Nstars stacked (if enabled)
+            
+            if nargin < 3
+                current_m_I = obj.imu.m_I; % Use static if dynamic is not provided
+            end
+            % Normalize the magnetic reference vector
+            current_m_I_unit = current_m_I / norm(current_m_I);
+
+            obj.m_ref = current_m_I_unit;
 
             % Predicted state
             q_pred = obj.x_est;
             P_pred = obj.P_est;
 
             % Split / normalize measurements (recommended)
-            acc = y_meas(1:3);
-            mag = y_meas(4:6);
+            acc = y_meas(1:3)/norm(y_meas(1:3));
+            mag = y_meas(4:6)/norm(y_meas(4:6));
 
             if obj.starTracker.enable
                 star = y_meas(7:end);

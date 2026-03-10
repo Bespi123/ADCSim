@@ -104,18 +104,25 @@ classdef AttitudeUKF < handle
             obj.P_est = P_pred;
         end
         
-        function Correct(obj, y_meas)
+        function Correct(obj, y_meas, current_m_I)
             %CORRECT Corrects the state estimate using accelerometer and magnetometer data.
             %   This method should be called at a lower frequency, when new
             %   attitude sensor measurements are available.
             
+            if nargin < 3
+                current_m_I = obj.imu.m_I; % Use static if dynamic is not provided
+            end
+            % Normalize the magnetic reference vector
+            current_m_I_unit = current_m_I / norm(current_m_I);
+            obj.m_ref = current_m_I_unit;
+
             % The current state obj.x_est is already the result of the last prediction
             x_pred = obj.x_est;
             P_pred = obj.P_est;
             
             % Normalize measurements
-            acc = y_meas(1:3);
-            mag = y_meas(4:6);
+            acc = y_meas(1:3)/norm(y_meas(1:3));
+            mag = y_meas(4:6)/norm(y_meas(4:6));
             
             if obj.starTracker.enable
                 star = y_meas(7:end);
