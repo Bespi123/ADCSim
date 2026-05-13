@@ -193,13 +193,19 @@ if enable_gui
     hWaitbar = waitbar(0, 'Progress: 0%','Name', 'Attitude simulation progress..');
 end
 
+% Pre-calculate sampling triggers to avoid modulo operations in the loop
+is_gyro_step = (mod(0:n-2, steps_gyro) == 0);
+is_attitude_step = (mod(0:n-2, steps_attitude) == 0);
+is_control_step = (mod(0:n-2, steps_control) == 0);
+is_feedback_ctrl = (simParameters.controller.selector == 1);
+
 try
     %% 5. Main Simulation Loop
     for i = 1:n-1
         %% 5.1. Sensor models (add noise, bias and SAMPLING)
         % Gyroscope model with sampling.
         % The gyroscope is read only if the current step is a multiple of `steps_gyro`.
-        if mod(i-1, steps_gyro) == 0 || i==1
+        if is_gyro_step(i)
             current_omega_meas  = myIMU.getGyroscopeReading(x(5:7, i));
             filtered_omega_meas = myIMU.filterGyroscopeReading(current_omega_meas);
         end
@@ -209,146 +215,70 @@ try
     
         %% 5.2. AHRS - Attitude and Heading Reference System
         if simParameters.ahrs.enable
-            if strcmp(simParameters.ahrs.flag, 'EKF')
-                % --- EKF Prediction Step (always runs at the high frequency of the simulation) ---
-                % The prediction step runs at each time step 'dt' using the
-                % most recent (potentially held) gyroscope measurement.
-                myEKF.predict(filtered_omega_meas);
-    
-                %%% --- EKF Correction Step (runs only when new attitude measurements are available) ---
-                if mod(i-1, steps_attitude) == 0
-                    % Generate new attitude sensor measurements from the true state.
-                    R = quat2rot(x(1:4, i));
-                    g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R,B_LVLH(:,i));
-                    if simParameters.sensors.star.enable == 1 
-                        stars_B(:,i)  = myStarSensor.getReading(R);
-                        y = [g_B(:,i); m_B(:,i); stars_B(:,i)]; % Measurement vector
-                    else
-                        y = [g_B(:,i); m_B(:,i)];
-                    end
-                    % Perform the EKF correction step with the new measurements.
-                    myEKF.correct(y, B_LVLH(:, i)); 
+            ahrs_flag = simParameters.ahrs.flag;
+            
+            % --- 1. Prediction Step ---
+            switch ahrs_flag
+                case 'EKF', myEKF.predict(filtered_omega_meas);
+                case 'MADGWICK', myMadwick = myMadwick.Predict(filtered_omega_meas);
+                case 'MAHONY', myMahony = myMahony.Predict(filtered_omega_meas);
+                case 'QUEST' % No prediction step
+                case 'REQUEST', myRequest = myRequest.Predict(filtered_omega_meas);
+                case 'CKF', myCKF.Predict(filtered_omega_meas);
+                otherwise, myUKF.Predict(filtered_omega_meas); % UKF
+            end
+            
+            % --- 2. Centralized Attitude Measurement Generation (DRY Principle) ---
+            if is_attitude_step(i)
+                R = quat2rot(x(1:4, i));
+                g_B(:,i) = myIMU.getAccelerometerReading(R);
+                m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
+                if simParameters.sensors.star.enable == 1 
+                    stars_B(:,i)  = myStarSensor.getReading(R);
+                    y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
+                else
+                    y = [g_B(:,i); m_B(:,i)];
                 end
-                % Save the updated state estimate.
-                x_est(:, i + 1) = myEKF.x_est';
-    
-            elseif strcmp(simParameters.ahrs.flag, 'MADGWICK')
-                %% Madgwick Algorithm
-                myMadwick = myMadwick.Predict(filtered_omega_meas);
-                % Correction step runs only when new attitude measurements are available.
-                if mod(i-1, steps_attitude) == 0
-                    R = quat2rot(x(1:4, i));
-                    g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
-                    if simParameters.sensors.star.enable == 1 
-                        stars_B(:,i)  = myStarSensor.getReading(R);
-                        y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
-                    else
-                        y = [g_B(:,i); m_B(:,i)];
-                    end
-                    myMadwick = myMadwick.Update(filtered_omega_meas, y, B_LVLH(:,i));
+                
+                % --- 3. Correction Step ---
+                switch ahrs_flag
+                    case 'EKF', myEKF.correct(y, B_LVLH(:, i));
+                    case 'MADGWICK', myMadwick = myMadwick.Update(filtered_omega_meas, y, B_LVLH(:,i));
+                    case 'MAHONY', myMahony = myMahony.Update(filtered_omega_meas, y, B_LVLH(:,i));
+                    case 'QUEST', myQuest = myQuest.Update(filtered_omega_meas, y, B_LVLH(:,i));
+                    case 'REQUEST', myRequest = myRequest.Update(filtered_omega_meas, y, B_LVLH(:,i));
+                    case 'CKF', myCKF.Correct(y, B_LVLH(:,i));
+                    otherwise, myUKF.Correct(y, B_LVLH(:,i)); % UKF
                 end
-                % Save the updated state estimate.
-                x_est(1:4, i + 1) = myMadwick.x_est;
-                x_est(5:7, i + 1) = myMadwick.gyro_bias;
-    
-            elseif strcmp(simParameters.ahrs.flag, 'MAHONY')
-                myMahony = myMahony.Predict(filtered_omega_meas);
-                % Correction step runs only when new attitude measurements are available.
-                if mod(i-1, steps_attitude) == 0
-                    R = quat2rot(x(1:4, i));
-                    g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
-                    if simParameters.sensors.star.enable == 1 
-                        stars_B(:,i)  = myStarSensor.getReading(R);
-                        y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
-                    else
-                        y = [g_B(:,i); m_B(:,i)];
-                    end
-                    myMahony = myMahony.Update(filtered_omega_meas, y, B_LVLH(:,i));
-                end
-                % Save the updated state estimate.
-               x_est(1:4, i + 1) = myMahony.x_est;
-               x_est(5:7, i + 1) = myMahony.gyro_bias; % Assuming UKF doesn't estimate gyro bias in this implementation.
-    
-            elseif strcmp(simParameters.ahrs.flag, 'QUEST')
-                 if mod(i-1, steps_attitude) == 0
-                    R = quat2rot(x(1:4, i));
-                    g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
-                    if simParameters.sensors.star.enable == 1 
-                        stars_B(:,i)  = myStarSensor.getReading(R);
-                        y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
-                    else
-                        y = [g_B(:,i); m_B(:,i)];
-                    end
-                    myQuest = myQuest.Update(filtered_omega_meas, y, B_LVLH(:,i));
-                end
-                % Save the updated state estimate.
-               x_est(1:4, i + 1) = myQuest.x_est;
-               x_est(5:7, i + 1) = myQuest.gyro_bias; % Assuming UKF doesn't estimate gyro bias in this implementation.        
-    
-            elseif strcmp(simParameters.ahrs.flag, 'REQUEST')
-                myRequest = myRequest.Predict(filtered_omega_meas);
-                if mod(i-1, steps_attitude) == 0
-                    R = quat2rot(x(1:4, i));
-                    g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
-                    if simParameters.sensors.star.enable == 1 
-                        stars_B(:,i)  = myStarSensor.getReading(R);
-                        y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
-                    else
-                        y = [g_B(:,i); m_B(:,i)];
-                    end
-                    myRequest = myRequest.Update(filtered_omega_meas, y, B_LVLH(:,i));
-                end
-                % Save the updated state estimate.
-                x_est(1:4, i + 1) = myRequest.x_est;
-                x_est(5:7, i + 1) = myRequest.gyro_bias; 
-    
-            elseif strcmp(simParameters.ahrs.flag, 'CKF')
-                myCKF.Predict(filtered_omega_meas);
-                if mod(i-1, steps_attitude) == 0
-                    R = quat2rot(x(1:4, i));
-                    g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
-                    if simParameters.sensors.star.enable == 1 
-                        stars_B(:,i)  = myStarSensor.getReading(R);
-                        y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
-                    else
-                        y = [g_B(:,i); m_B(:,i)];
-                    end
-                    myCKF.Correct(y, B_LVLH(:,i));
-                end
-                % Save the updated state estimate.
-                x_est(1:4, i + 1) = myCKF.x_est;
-                x_est(5:7, i + 1) = myCKF.gyro_bias; 
-    
-            else
-                %% Unscented Kalman Filter (UKF)
-                myUKF.Predict(filtered_omega_meas);
-                % Correction step runs only when new attitude measurements are available.
-                if mod(i-1, steps_attitude) == 0
-                    R = quat2rot(x(1:4, i));
-                    g_B(:,i) = myIMU.getAccelerometerReading(R);
-                    m_B(:,i) = myIMU.getMagnetometerReading(R, B_LVLH(:,i));
-                    if simParameters.sensors.star.enable == 1 
-                        stars_B(:,i)  = myStarSensor.getReading(R);
-                        y = [g_B(:,i); m_B(:,i); stars_B(:,i)];
-                    else
-                        y = [g_B(:,i); m_B(:,i)];
-                    end
-                    myUKF.Correct(y, B_LVLH(:,i));
-                end
-                % Save the updated state estimate.
-               x_est(1:4, i + 1) = myUKF.x_est;
-               x_est(5:7, i + 1) = zeros(3,1); % Assuming UKF doesn't estimate gyro bias in this implementation.
+            end
+            
+            % --- 4. Save the updated state estimate ---
+            switch ahrs_flag
+                case 'EKF'
+                    x_est(:, i + 1) = myEKF.x_est';
+                case 'MADGWICK'
+                    x_est(1:4, i + 1) = myMadwick.x_est;
+                    x_est(5:7, i + 1) = myMadwick.gyro_bias;
+                case 'MAHONY'
+                    x_est(1:4, i + 1) = myMahony.x_est;
+                    x_est(5:7, i + 1) = myMahony.gyro_bias;
+                case 'QUEST'
+                    x_est(1:4, i + 1) = myQuest.x_est;
+                    x_est(5:7, i + 1) = myQuest.gyro_bias;
+                case 'REQUEST'
+                    x_est(1:4, i + 1) = myRequest.x_est;
+                    x_est(5:7, i + 1) = myRequest.gyro_bias;
+                case 'CKF'
+                    x_est(1:4, i + 1) = myCKF.x_est;
+                    x_est(5:7, i + 1) = myCKF.gyro_bias;
+                otherwise % UKF
+                    x_est(1:4, i + 1) = myUKF.x_est;
+                    x_est(5:7, i + 1) = zeros(3,1); 
             end
         end
         %% 5.3. Control Law (runs at its own sampling rate Ts_control)
         % A new control command is calculated only when it's the correct time step.
-        if mod(i-1, steps_control) == 0
+        if is_control_step(i)
             % --- Calculate new control command ---
             % Use either the estimated state or the ideal true state as feedback.
             if simParameters.ahrs.enable_feedback && simParameters.ahrs.enable
@@ -365,7 +295,7 @@ try
     
             % Measure the computation time of the control law.
             tic
-            if simParameters.controller.selector == 1
+            if is_feedback_ctrl
                 % Standard Feedback Controller.
                 u_new = adcsim.controllers.ControlFeedback_rw(I, feed_est, dq(:, i), wd(:, i), Wd_dot(:, i), P, K); 
             else
