@@ -94,5 +94,46 @@ Satellite_ADCS_GUIDE/
 ### Run the Application
 Run the `main.m` file.
 
+### Monte Carlo Simulations
+ADCSim also includes a programmatic Monte Carlo runner for robustness studies:
+
+```matlab
+params = simulation_Parameters([]);
+results = initialize_Results(params);
+
+opts.numRuns = 50;
+opts.seed = 1234;
+opts.perturbations.initialAttitudeStdRad = deg2rad(1);
+opts.perturbations.inertiaRelStd = 0.03;
+
+mc = core.runMonteCarloSimulation(params, results, opts);
+disp(mc.summary)
+```
+
+See `monte_carlo_example.m` for a fuller example with sensor, actuator, and disturbance perturbations.
+
+For the orbital-environment workflow, first run an Orekit Monte Carlo and
+then convert each propagated orbit into disturbance torque histories:
+
+```matlab
+params = simulation_Parameters([]);
+results = initialize_Results(params);
+
+orbitOpts.numRuns = 5;
+orbitOpts.perturbations.semiMajorAxisStdM = 100;
+orbitOpts.perturbations.inclinationStdRad = deg2rad(0.01);
+orbitMc = core.runOrbitMonteCarloSimulation(params, orbitOpts);
+
+torqueOpts.perturbations.inertiaRelStd = 0.02;
+torqueOpts.perturbations.dragLeverArmStdM = [0.002; 0.002; 0.002];
+torqueMc = core.runTorqueMonteCarloFromOrbit(orbitMc, params, results, torqueOpts);
+
+caseIdx = find([torqueMc.runs.success], 1);
+[x, u, torque, x_est, indicators] = core.simulation_rk4( ...
+    torqueMc.runs(caseIdx).simParameters, torqueMc.runs(caseIdx).simResults, false);
+```
+
+See `orbit_torque_monte_carlo_example.m` for the complete pipeline.
+
 ## Credits
 Brayan Espinoza (bespi123)

@@ -72,6 +72,10 @@ function history = runOrekitSimulation(simParams)
 %         17–19  : SRP acceleration [m/s^2]
 %         20–22  : geomagnetic field (BN, BE, BD) in local NED [Tesla]
 %
+%       Current StepStorageHandler output is [N x 29]: columns 5-7 are
+%       velocity, 8-22 are force accelerations, 23-25 are magnetic field in
+%       GCRF, and 26-29 are the GCRF-to-LVLH quaternion.
+%
 %   REQUIREMENTS
 %   ------------
 %   - Orekit must be correctly configured in MATLAB Java classpath.

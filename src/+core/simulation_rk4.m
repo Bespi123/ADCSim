@@ -29,8 +29,12 @@ function [x, u, T_winf_nosat, x_est, indicators, sensors, actuators, error_flag]
 %
 % ----------------------------------------------------------------------------------
 
-%%% Import adsim utilities
-import adcsim.utils.*
+%%% Import specific adcsim utilities to optimize dependencies
+import adcsim.utils.quat2rot
+import adcsim.utils.Error_quaternio
+import adcsim.utils.allocator_L2norm
+import adcsim.utils.allocator_LinfNorm
+import adcsim.utils.calculateSettlementTime
 
 %%% Check if wait bar is available
 if nargin < 3
@@ -158,14 +162,26 @@ else
 end
 myStarSensor = adcsim.sensors.StarTracker(simParameters.sensors.star);
 
-% Initialize AHRS (Attitude and Heading Reference System) objects.
-myEKF = adcsim.AHRS_algorithms.AttitudeEKF(simParameters.ahrs.ekf, dt, myIMU, myStarSensor);
-myMadwick = adcsim.AHRS_algorithms.MadgwickAHRS(simParameters.ahrs.madwick, dt, myIMU, myStarSensor);
-myUKF = adcsim.AHRS_algorithms.AttitudeUKF(simParameters.ahrs.ukf, dt, myIMU, myStarSensor);
-myMahony = adcsim.AHRS_algorithms.Mahony(simParameters.ahrs.mahony, dt, myIMU, myStarSensor);
-myQuest= adcsim.AHRS_algorithms.QUEST(simParameters.ahrs.quest, dt, myIMU, myStarSensor);
-myRequest= adcsim.AHRS_algorithms.REQUEST(simParameters.ahrs.request, dt, myIMU, myStarSensor);
-myCKF = adcsim.AHRS_algorithms.AttitudeCKF(simParameters.ahrs.ckf, dt, myIMU, myStarSensor);
+% Initialize AHRS (Attitude and Heading Reference System) objects conditionally to save memory.
+if simParameters.ahrs.enable
+    ahrs_flag = simParameters.ahrs.flag;
+    switch ahrs_flag
+        case 'EKF'
+            myAHRS = adcsim.AHRS_algorithms.AttitudeEKF(simParameters.ahrs.ekf, dt, myIMU, myStarSensor);
+        case 'MADGWICK'
+            myAHRS = adcsim.AHRS_algorithms.MadgwickAHRS(simParameters.ahrs.madwick, dt, myIMU, myStarSensor);
+        case 'MAHONY'
+            myAHRS = adcsim.AHRS_algorithms.Mahony(simParameters.ahrs.mahony, dt, myIMU, myStarSensor);
+        case 'QUEST'
+            myAHRS = adcsim.AHRS_algorithms.QUEST(simParameters.ahrs.quest, dt, myIMU, myStarSensor);
+        case 'REQUEST'
+            myAHRS = adcsim.AHRS_algorithms.REQUEST(simParameters.ahrs.request, dt, myIMU, myStarSensor);
+        case 'CKF'
+            myAHRS = adcsim.AHRS_algorithms.AttitudeCKF(simParameters.ahrs.ckf, dt, myIMU, myStarSensor);
+        otherwise % UKF
+            myAHRS = adcsim.AHRS_algorithms.AttitudeUKF(simParameters.ahrs.ukf, dt, myIMU, myStarSensor);
+    end
+end
 
 % Get the initial rotation matrix from the true state.
 R_init = quat2rot(x(1:4, 1));
@@ -177,8 +193,10 @@ m_B(:,1) = myIMU.getMagnetometerReading(R_init, B_LVLH(:,1));
 % Hold variable for magnetometer (avoids NaNs in control loop)
 last_m_B = m_B(:,1);
 
-% Initialize the EKF using the TRIAD method with the first measurements.
-myEKF.initializeWithTriad(g_B(:,1), m_B(:,1), B_LVLH(:,1));
+% Initialize the AHRS using TRIAD method if EKF is selected.
+if simParameters.ahrs.enable && strcmp(ahrs_flag, 'EKF')
+    myAHRS.initializeWithTriad(g_B(:,1), m_B(:,1), B_LVLH(:,1));
+end
 
 if simParameters.sensors.star.enable == 1
     stars_B(:,1) = myStarSensor.getReading(R_init);
@@ -188,7 +206,7 @@ end
 % The derivative of the desired angular velocity is pre-calculated to avoid doing it inside the loop.
 Wd_dot = diff(wd')'./diff(t);
 % Initialize the progress bar for user feedback.
-hWaitbar = []; % Inicializar vacío por seguridad
+hWaitbar = []; % Initialize empty for safety
 if enable_gui
     hWaitbar = waitbar(0, 'Progress: 0%','Name', 'Attitude simulation progress..');
 end
@@ -209,6 +227,11 @@ try
             current_omega_meas  = myIMU.getGyroscopeReading(x(5:7, i));
             filtered_omega_meas = myIMU.filterGyroscopeReading(current_omega_meas);
         end
+        % Initialize if not set (for first iteration or non-gyro steps)
+        if ~exist('current_omega_meas', 'var') || isempty(current_omega_meas)
+            current_omega_meas = zeros(3,1);
+            filtered_omega_meas = zeros(3,1);
+        end
         % The measurement (raw or held from the previous step) is saved to the history.
         omega_meas(:, i) = current_omega_meas;
         omega_meas_filtered(:,i) = filtered_omega_meas;
@@ -219,13 +242,20 @@ try
             
             % --- 1. Prediction Step ---
             switch ahrs_flag
-                case 'EKF', myEKF.predict(filtered_omega_meas);
-                case 'MADGWICK', myMadwick = myMadwick.Predict(filtered_omega_meas);
-                case 'MAHONY', myMahony = myMahony.Predict(filtered_omega_meas);
-                case 'QUEST' % No prediction step
-                case 'REQUEST', myRequest = myRequest.Predict(filtered_omega_meas);
-                case 'CKF', myCKF.Predict(filtered_omega_meas);
-                otherwise, myUKF.Predict(filtered_omega_meas); % UKF
+                case 'EKF'
+                    myAHRS.predict(filtered_omega_meas);
+                case 'MADGWICK'
+                    myAHRS = myAHRS.Predict(filtered_omega_meas);
+                case 'MAHONY'
+                    myAHRS = myAHRS.Predict(filtered_omega_meas);
+                case 'QUEST'
+                    % No prediction step
+                case 'REQUEST'
+                    myAHRS = myAHRS.Predict(filtered_omega_meas);
+                case 'CKF'
+                    myAHRS.Predict(filtered_omega_meas);
+                otherwise % UKF
+                    myAHRS.Predict(filtered_omega_meas);
             end
             
             % --- 2. Centralized Attitude Measurement Generation (DRY Principle) ---
@@ -242,38 +272,45 @@ try
                 
                 % --- 3. Correction Step ---
                 switch ahrs_flag
-                    case 'EKF', myEKF.correct(y, B_LVLH(:, i));
-                    case 'MADGWICK', myMadwick = myMadwick.Update(filtered_omega_meas, y, B_LVLH(:,i));
-                    case 'MAHONY', myMahony = myMahony.Update(filtered_omega_meas, y, B_LVLH(:,i));
-                    case 'QUEST', myQuest = myQuest.Update(filtered_omega_meas, y, B_LVLH(:,i));
-                    case 'REQUEST', myRequest = myRequest.Update(filtered_omega_meas, y, B_LVLH(:,i));
-                    case 'CKF', myCKF.Correct(y, B_LVLH(:,i));
-                    otherwise, myUKF.Correct(y, B_LVLH(:,i)); % UKF
+                    case 'EKF'
+                        myAHRS.correct(y, B_LVLH(:, i));
+                    case 'MADGWICK'
+                        myAHRS = myAHRS.Update(filtered_omega_meas, y, B_LVLH(:,i));
+                    case 'MAHONY'
+                        myAHRS = myAHRS.Update(filtered_omega_meas, y, B_LVLH(:,i));
+                    case 'QUEST'
+                        myAHRS = myAHRS.Update(filtered_omega_meas, y, B_LVLH(:,i));
+                    case 'REQUEST'
+                        myAHRS = myAHRS.Update(filtered_omega_meas, y, B_LVLH(:,i));
+                    case 'CKF'
+                        myAHRS.Correct(y, B_LVLH(:,i));
+                    otherwise % UKF
+                        myAHRS.Correct(y, B_LVLH(:,i));
                 end
             end
             
             % --- 4. Save the updated state estimate ---
             switch ahrs_flag
                 case 'EKF'
-                    x_est(:, i + 1) = myEKF.x_est';
+                    x_est(:, i + 1) = myAHRS.x_est';
                 case 'MADGWICK'
-                    x_est(1:4, i + 1) = myMadwick.x_est;
-                    x_est(5:7, i + 1) = myMadwick.gyro_bias;
+                    x_est(1:4, i + 1) = myAHRS.x_est;
+                    x_est(5:7, i + 1) = myAHRS.gyro_bias;
                 case 'MAHONY'
-                    x_est(1:4, i + 1) = myMahony.x_est;
-                    x_est(5:7, i + 1) = myMahony.gyro_bias;
+                    x_est(1:4, i + 1) = myAHRS.x_est;
+                    x_est(5:7, i + 1) = myAHRS.gyro_bias;
                 case 'QUEST'
-                    x_est(1:4, i + 1) = myQuest.x_est;
-                    x_est(5:7, i + 1) = myQuest.gyro_bias;
+                    x_est(1:4, i + 1) = myAHRS.x_est;
+                    x_est(5:7, i + 1) = myAHRS.gyro_bias;
                 case 'REQUEST'
-                    x_est(1:4, i + 1) = myRequest.x_est;
-                    x_est(5:7, i + 1) = myRequest.gyro_bias;
+                    x_est(1:4, i + 1) = myAHRS.x_est;
+                    x_est(5:7, i + 1) = myAHRS.gyro_bias;
                 case 'CKF'
-                    x_est(1:4, i + 1) = myCKF.x_est;
-                    x_est(5:7, i + 1) = myCKF.gyro_bias;
+                    x_est(1:4, i + 1) = myAHRS.x_est;
+                    x_est(5:7, i + 1) = myAHRS.gyro_bias;
                 otherwise % UKF
-                    x_est(1:4, i + 1) = myUKF.x_est;
-                    x_est(5:7, i + 1) = zeros(3,1); 
+                    x_est(1:4, i + 1) = myAHRS.x_est;
+                    x_est(5:7, i + 1) = zeros(3,1);
             end
         end
         %% 5.3. Control Law (runs at its own sampling rate Ts_control)
@@ -463,23 +500,23 @@ try
     end
 
 catch ME
-    % 1. Activar bandera de error
+    % 1. Activate error flag
     error_flag = 1;
     
-    % 2. Asegurarse de cerrar la barra de progreso si está abierta
+    % 2. Ensure to close the progress bar if open
     if enable_gui && isa(hWaitbar, 'handle') && isvalid(hWaitbar)
         close(hWaitbar);
     end
     
-    % 3. Imprimir el error en consola para debugging sin crashear la app
+    % 3. Print the error to console for debugging without crashing the app
     fprintf(2, '\n--- SIMULATION FAILED ---\n');
     fprintf(2, 'Error in %s (Line %d):\n%s\n', ME.stack(1).name, ME.stack(1).line, ME.message);
     fprintf(2, '-------------------------\n\n');
     
-    % 4. Devolver indicadores vacíos/NaN para evitar errores en la interfaz principal
+    % 4. Return empty/NaN indicators to avoid errors in the main interface
     indicators = struct('eulerInt', NaN, 'ascct', NaN, 'ts', [NaN, NaN, NaN], 'o', NaN, 'RMSE', NaN);
     
-    % Empaquetar las variables de salida obligatorias para evitar el error "Output argument not assigned"
+    % Package the mandatory output variables to avoid the error "Output argument not assigned"
     sensors = struct('meas', [], 'est', [], 'omega_filtered', []);
     actuators = struct('w_cmd', w_rw_cmd, 'x_rw', x_rw, 'torque_real', torque_rw_real, 'u_rw', u_rw);
 end

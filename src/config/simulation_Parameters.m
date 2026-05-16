@@ -1,5 +1,9 @@
 function parameters = simulation_Parameters(~)
-    import org.orekit.utils.Constants;
+    try
+        earth_equatorial_radius = org.orekit.utils.Constants.WGS84_EARTH_EQUATORIAL_RADIUS;
+    catch
+        earth_equatorial_radius = 6378137.0; % WGS84 equatorial radius [m]
+    end
 
     % This function defines all configurable parameters for the CubeSat ADCS simulation.
     % It returns a single structure 'parameters' that contains all nested sub-structures
@@ -7,7 +11,7 @@ function parameters = simulation_Parameters(~)
 
     % --- Simulation Parametets ---
     parameters.sim.t0    = 0;
-    parameters.sim.tf    = 10;
+    parameters.sim.tf    = 60;
     parameters.sim.step  = 1E-4;
     %parameters.sim.t  = parameters.sim.t0:parameters.sim.step:parameters.sim.tf;
     
@@ -18,9 +22,9 @@ function parameters = simulation_Parameters(~)
     % Inertia tensor of the CubeSat [kg*m^2]. This represents the distribution of mass
     % and how the satellite resists rotational motion. Off-diagonal terms represent
     % products of inertia.
-    parameters.spacecraft.I = 1E-3 * [8.460 0.082 -0.054;
-                                      0.082 8.46 0.016;
-                                     -0.054 0.016 8.46];
+    parameters.spacecraft.I = [0.2785 -0.005 0.003;
+                              -0.005 0.2792 0.004;
+                               0.003 0.004 0.1705];
 
     % Initial attitude quaternion [w, x, y, z]' (scalar-first format). 
     % Represents the initial orientation of the CubeSat relative to the inertial frame.
@@ -35,17 +39,17 @@ function parameters = simulation_Parameters(~)
     
     % Sample time for the gyroscope sensor [s]. Gyros are often sampled at a higher
     % rate because they are used for high-frequency state propagation in the AHRS.
-    parameters.sensors.gyro.Ts           = 0.005; % 200 Hz
-    parameters.sensors_soph.gyro.Ts      = 0.005; % 200 Hz
+    parameters.sensors.gyro.Ts           = 0.02; % 50 Hz
+    parameters.sensors_soph.gyro.Ts      = 0.02; % 50 Hz
 
     % Sample time for other attitude sensors (Accelerometer, Magnetometer, Star Tracker) [s].
     % These sensors are typically slower and used for correcting the gyro drift.
-    parameters.sensors.attitude.Ts  = 0.01;  % 100 Hz
+    parameters.sensors.attitude.Ts  = 0.2;  % 5 Hz star-tracker class update
     
     % Sample time for the control loop execution [s]. This defines how often the
     % control law is calculated and a new command is sent to the actuators.
-    parameters.control.Ts           = 0.005; % 200 Hz
-    
+    parameters.control.Ts           = 0.02; % 50 Hz
+
     % --- Sensor Model Parameters ---
     % These sections model the imperfections of real-world sensors.
     % Flag to use sophisticated model (0) or simple model (1)
@@ -71,17 +75,17 @@ function parameters = simulation_Parameters(~)
     
     %%% Gyroscope sensor
     % Gyroscope constant bias [rad/s]. Represents a slow drift in the angular rate measurement.
-    parameters.sensors.gyro.bias = [-0.0000541; -0.0001553; -0.00006458];
+    parameters.sensors.gyro.bias = deg2rad([1; -1; 0.5] / 3600);
     % Gyroscope noise standard deviation (Angular Random Walk) [rad/s]. Models high-frequency noise.
-    parameters.sensors.gyro.std  = [0.009; 0.008; 0.007];
+    parameters.sensors.gyro.std  = deg2rad(0.23) * [1; 1; 1];
     % Gyroscope low-pass filter time constant [s]. Models the sensor's response time.
     parameters.sensors.gyro.tau = 0.1;
     
     %%% Star Tracker sensor (high-precision attitude sensor)
     % Star Tracker constant bias [rad].
-    parameters.sensors.star.bias = 1E-6 * [1; 1; 1];
+    parameters.sensors.star.bias = deg2rad(2/3600) * [1; 1; 1];
     % Star Tracker noise standard deviation [rad].
-    parameters.sensors.star.std  = 1E-3 * [1; 1; 1];
+    parameters.sensors.star.std  = deg2rad(30/3600) / 3 * [1; 1; 1];
     % Flag to enable (1) or disable (0) the star tracker in the simulation.
     parameters.sensors.star.enable = 1;
     % Number of stars (or direction vectors) to be simulated by the star tracker.
@@ -93,21 +97,21 @@ function parameters = simulation_Parameters(~)
 
     %%% Gyroscope (Sophisticated Model)
     % Initial bias at the start of the simulation [rad/s].
-    parameters.sensors_soph.gyro.initial_bias = [-0.0000541; -0.0001553; -0.00006458];
+    parameters.sensors_soph.gyro.initial_bias = parameters.sensors.gyro.bias;
     % Gyroscope low-pass filter time constant [s]. Models the sensor's response time.
     parameters.sensors_soph.gyro.tau = parameters.sensors.gyro.tau;
     % Standard deviation of the high-frequency white noise [rad/s].
-    parameters.sensors_soph.gyro.std = [0.009; 0.008; 0.007];
+    parameters.sensors_soph.gyro.std = parameters.sensors.gyro.std;
     % Bias Instability (Random Walk) standard deviation [rad/s/sqrt(Hz) or rad/sqrt(s)].
     % This value dictates how fast the bias drifts. (e.g., from a 10 deg/hr spec).
-    parameters.sensors_soph.gyro.std_RW = 4.8e-5 * [1; 1; 1];
+    parameters.sensors_soph.gyro.std_RW = deg2rad(1/3600) * [1; 1; 1];
     % Scale factor errors (e.g., 0.1% error) [dimensionless].
     parameters.sensors_soph.gyro.scale_factor_errors = 0.001 * [0.5; -0.8; 0.3];
     % Axis misalignment errors (e.g., 0.2 degrees) [radians].
     % [m12, m13, m21, m23, m31, m32]
     parameters.sensors_soph.gyro.misalignment_errors = 0.0035 * [1; -0.5; 0.8; 1.1; -0.9; 0.6];
     % Sensor saturation limit [rad/s].
-    parameters.sensors_soph.gyro.limit = 2000* (pi/180);
+    parameters.sensors_soph.gyro.limit = deg2rad(20);
     % ADC Resolution [bits].
     parameters.sensors_soph.gyro.bits = 16;
     % ADC reference voltage [v].
@@ -195,26 +199,26 @@ function parameters = simulation_Parameters(~)
     % EKF magnetometer noise standard deviation (used in R matrix).
     parameters.ahrs.ekf.mag_std    = [0.011817097; 0.012306208; 0.015949601];
     % EKF gyroscope noise standard deviation (used in Q matrix - process noise).
-    parameters.ahrs.ekf.gyro_std   = [0.009; 0.008; 0.007];
+    parameters.ahrs.ekf.gyro_std   = parameters.sensors.gyro.std;
     % EKF star tracker noise standard deviation (used in R matrix).
-    parameters.ahrs.ekf.star_std   = 1E-3 * [1; 1; 1];
+    parameters.ahrs.ekf.star_std   = parameters.sensors.star.std;
     
     % UKF (Unscented Kalman Filter) parameters
     % These parameters control the generation and weighting of sigma points.
     parameters.ahrs.ukf.alpha = 1e-3; % Scaling parameter, spread of sigma points.
     parameters.ahrs.ukf.beta  = 2.0;  % Used to incorporate prior knowledge of the state distribution.
     parameters.ahrs.ukf.kappa = 0.0;  % Secondary scaling parameter.
-    parameters.ahrs.ukf.gyro_std = [0.009; 0.008; 0.007];
+    parameters.ahrs.ukf.gyro_std = parameters.sensors.gyro.std;
     parameters.ahrs.ukf.acc_std  = [0.011817097; 0.012306208; 0.015949601];
     parameters.ahrs.ukf.mag_std  = [0.011817097; 0.012306208; 0.015949601];
-    parameters.ahrs.ukf.star_std  = 1E-3 * [1; 1; 1];
+    parameters.ahrs.ukf.star_std  = parameters.sensors.star.std;
     
     % CKF (Cubature Kalman Filter) parameters
     parameters.ahrs.ckf = struct( ...
-    'gyro_std',  [0.002; 0.002; 0.002], ...
+    'gyro_std',  parameters.sensors.gyro.std, ...
     'acc_std',   [0.002; 0.002; 0.002], ...
     'mag_std',   [0.03;  0.03;  0.03 ], ...
-    'star_std',  [1e-3;  1e-3;  1e-3]  ... 
+    'star_std',  parameters.sensors.star.std  ... 
     );
     
     % --- Controller Setpoint Parameters ---
@@ -230,27 +234,27 @@ function parameters = simulation_Parameters(~)
     
     % --- Feedback Controller (PD) Parameters ---
     % Derivative gain matrix (acts on angular velocity error).
-    parameters.controller.feedback.Keye = diag([2.1028, 1.9656, 1.2]);
+    parameters.controller.feedback.Keye = diag([3.3377267725443067, 8.4352256525255, 18.67986495515101]);
     % Proportional gain matrix (acts on quaternion error).
-    parameters.controller.feedback.Peye = diag([0.2824, 0.3676, 0.3039]);
+    parameters.controller.feedback.Peye = diag([16.29447372786358, 12.64718492450819, 19.150136708685952]);
     
     % --- Boskovic Adaptive Controller Parameters ---
     parameters.controller.boskController.delta = 0.5;
     parameters.controller.boskController.gamma = 0.001; % Adaptation rate.
-    parameters.controller.boskController.Umax  = 0.10;  % Maximum control torque magnitude [Nm].
+    parameters.controller.boskController.Umax  = 2.0e-3;  % Maximum control torque magnitude [Nm], iADCS400-class.
     parameters.controller.boskController.k0    = 1;     % Initial gain value.
     
     % --- Disturbance Torque Parameters ---
     % These model external torques acting on the satellite.
     % Constant disturbance torque components [Nm].
-    parameters.disturbances.constant.Tdx = 0.001;
-    parameters.disturbances.constant.Tdy = 0.001;
-    parameters.disturbances.constant.Tdz = 0.001;
+    parameters.disturbances.constant.Tdx = 1e-6;
+    parameters.disturbances.constant.Tdy = 1e-6;
+    parameters.disturbances.constant.Tdz = 1e-6;
     % Flag to enable (2) or disable (1) constant disturbances.
     parameters.disturbances.constant.enable = 1;
     
     % Parameters for variable (sinusoidal) disturbances [Nm].
-    parameters.disturbances.variable.A   = 0.01;   % Amplitude
+    parameters.disturbances.variable.A   = 5e-7;   % Amplitude
     parameters.disturbances.variable.w1  = 1.00;   % Frequency for x-axis
     parameters.disturbances.variable.w2  = 2.00;   % Frequency for y-axis
     parameters.disturbances.variable.w3  = 3.00;   % Frequency for z-axis
@@ -321,11 +325,11 @@ function parameters = simulation_Parameters(~)
     parameters.mtq.enable      = 1;       % Enable magnetorquers for saturation
     parameters.mtq.number      = 3;       % Number of magnetorquers
     parameters.mtq.W           = eye(3);  % Aligned with the X, Y, Z axes of the Body Frame
-    parameters.mtq.max_dipole  = 0.2;     % [Am^2] Maximum magnetic dipole moment
+    parameters.mtq.max_dipole  = 0.5;     % [Am^2] X/Y maximum magnetic dipole moment
     parameters.mtq.max_voltage = 5.0;     % [V] Typical EPS bus voltage for actuators
-    parameters.mtq.resistance  = 40.0;    % [Ohms] Internal resistance of the copper coil
-    parameters.mtq.area        = 0.0064;  % [m^2] Coil cross-sectional area (equivalent to an 8x8 cm square)
-    parameters.mtq.turns       = 250;     % [Turns] Number of copper wire turns
+    parameters.mtq.resistance  = 50.0;    % [Ohms] Internal resistance of the copper coil
+    parameters.mtq.area        = 0.0080;  % [m^2] Coil cross-sectional area
+    parameters.mtq.turns       = 625;     % [Turns] Gives about 0.5 Am^2 at 5 V
         
     % --- Desaturation gains ---
     parameters.mtq.k_dump = 0.5; 
@@ -335,12 +339,12 @@ function parameters = simulation_Parameters(~)
     parameters.initialDate = datetime(2025, 10, 10, 23, 30, 00);
     
     % --- Initial Orbit (Keplerian Elements) ---
-    parameters.initialOrbit.a    = Constants.WGS84_EARTH_EQUATORIAL_RADIUS + 420e3; % Semi-major axis (m)
-    parameters.initialOrbit.e    = 0.0001;          % Eccentricity
-    parameters.initialOrbit.i    = 51.6 * pi / 180; % Inclination (rad)
-    parameters.initialOrbit.raan = 0.0;             % Right Ascension of the Ascending Node (rad)
-    parameters.initialOrbit.pa   = 0.0;             % Argument of Perigee (rad)
-    parameters.initialOrbit.ta   = 0.0;             % True Anomaly (rad)
+    parameters.initialOrbit.a    = earth_equatorial_radius + 613e3; % Semi-major axis (m)
+    parameters.initialOrbit.e    = 0.0037118 ;          % Eccentricity
+    parameters.initialOrbit.i    = 97.799 * pi / 180;   % Inclination (rad)
+    parameters.initialOrbit.raan = 80.477 * pi / 180;   % Right Ascension of the Ascending Node (rad)
+    parameters.initialOrbit.pa   = 65.443 * pi / 180;   % Argument of Perigee (rad)
+    parameters.initialOrbit.ta   = 294.6817 * pi / 180; % True Anomaly (rad)
     
     % --- Spacecraft Physical Properties ---
     parameters.spacecraft.mass       = 10.0;  % kg
@@ -364,8 +368,8 @@ function parameters = simulation_Parameters(~)
     parameters.integrator.posTolerance  = 1.0;    % m
     
     % --- GA controller Settings ---
-    parameters.ga.controller.popultaionSize = 10;
-    parameters.ga.controller.generations    = 20;
+    parameters.ga.controller.popultaionSize = 5;
+    parameters.ga.controller.generations    = 5;
     parameters.ga.controller.tolerance      = 1e-4;
     parameters.ga.controller.ref_ts         = 5;
 

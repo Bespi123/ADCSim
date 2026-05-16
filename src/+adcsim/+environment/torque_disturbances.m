@@ -38,11 +38,13 @@ classdef torque_disturbances
             %   OUTPUT:
             %       Tgg         - (Nx3) Matrix of gravity gradient torques [N*m].
 
-            import org.orekit.utils.Constants;
-            
             % 1. Physical and Inertial Parameters
             sat_inertia = obj.satellite.I;
-            mu = Constants.EGM96_EARTH_MU; 
+            try
+                mu = org.orekit.utils.Constants.EGM96_EARTH_MU;
+            catch
+                mu = 3.986004418e14; % Earth gravitational parameter [m^3/s^2]
+            end
              
             % 2. Normalize Quaternions and calculate orbital angular velocity
             q = quaternions ./ sqrt(sum(quaternions.^2, 2));
